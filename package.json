@@ -1,0 +1,15 @@
+{
+  "name": "sulchan-avoda-management",
+  "version": "0.1.0",
+  "description": "שולחן עבודה - ניהול: ניהול סניפים, הוראות תחזוקה/ניקיון לעובדים (אתר + שלוחת ימות המשיח), דיווחים, צ'אט, מוטבים למשכורות והכנסות/הוצאות. אפס תלויות חיצוניות - Node.js 22.5+ בלבד (node:sqlite).",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node tests/test-flow.js"
+  },
+  "dependencies": {}
+}

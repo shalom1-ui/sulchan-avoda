@@ -1,0 +1,588 @@
+<meta charset="utf-8">
+<title>שולחן עבודה - ניהול</title>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#12161d; --surface:#1a2029; --surface-2:#212836; --line:#2b3242;
+    --text:#eef0f4; --muted:#8c94a6; --accent:#2fb08d; --accent-soft:#1f6a56;
+    --warn:#e8a33d; --danger:#d9614f; --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);}
+  body{direction:rtl;font-family:'Rubik',sans-serif;min-height:100vh;}
+  a{color:var(--accent);}
+  input,select,textarea,button{font-family:'Rubik',sans-serif;}
+  input,select,textarea{
+    background:var(--surface-2);border:1px solid var(--line);color:var(--text);
+    border-radius:10px;padding:10px 12px;font-size:14.5px;outline:none;width:100%;
+  }
+  input:focus,select:focus,textarea:focus{border-color:var(--accent);}
+  button{
+    background:var(--accent);color:#0d1310;border:none;border-radius:10px;
+    padding:10px 16px;font-weight:700;font-size:14.5px;cursor:pointer;
+  }
+  button.secondary{background:var(--surface-2);color:var(--text);border:1px solid var(--line);}
+  button.danger{background:var(--danger);color:#fff;}
+  button:disabled{opacity:.5;cursor:not-allowed;}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin-bottom:16px;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  .muted{color:var(--muted);font-size:13px;}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  th,td{padding:8px 6px;text-align:right;border-bottom:1px solid var(--line);}
+  th{color:var(--muted);font-weight:600;font-size:12px;}
+  .badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:600;}
+  .badge.pending{background:rgba(232,163,61,.15);color:var(--warn);}
+  .badge.done{background:rgba(47,176,141,.15);color:var(--accent);}
+  .badge.not_done,.badge.issue{background:rgba(217,97,79,.15);color:var(--danger);}
+  #loginScreen{display:flex;align-items:center;justify-content:center;min-height:100vh;}
+  #loginBox{width:100%;max-width:360px;}
+  #appShell{display:none;}
+  header{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:0;z-index:5;}
+  header .title{font-weight:800;font-size:17px;}
+  nav{display:flex;gap:6px;padding:10px 24px;overflow-x:auto;background:var(--surface);border-bottom:1px solid var(--line);}
+  nav button{background:transparent;color:var(--muted);border:1px solid transparent;white-space:nowrap;}
+  nav button.active{background:var(--surface-2);color:var(--accent);border-color:var(--accent-soft);}
+  main{padding:20px 24px;max-width:1000px;margin:0 auto;}
+  .bell{position:relative;cursor:pointer;font-size:20px;}
+  .bell .dot{position:absolute;top:-4px;left:-4px;background:var(--danger);color:#fff;font-size:10px;border-radius:999px;padding:1px 5px;font-family:'JetBrains Mono',monospace;}
+  .stat{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center;}
+  .stat .n{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:var(--accent);}
+  .stat .l{font-size:11.5px;color:var(--muted);margin-top:4px;}
+  .grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;}
+  .msg{max-width:70%;padding:9px 13px;border-radius:12px;margin-bottom:8px;font-size:14px;}
+  .msg.mine{background:var(--accent-soft);margin-inline-start:auto;}
+  .msg.theirs{background:var(--surface-2);}
+  .msg .meta{font-size:10.5px;color:var(--muted);margin-top:3px;}
+  .status-line{font-size:13px;margin-top:8px;min-height:16px;}
+  .status-line.err{color:var(--danger);}
+  .status-line.ok{color:var(--accent);}
+  .chart-wrap{overflow-x:auto;}
+</style>
+
+<div id="loginScreen">
+  <div id="loginBox" class="card">
+    <div style="font-weight:800;font-size:20px;margin-bottom:4px;">שולחן עבודה</div>
+    <div class="muted" style="margin-bottom:18px;">כניסה למערכת ניהול</div>
+    <div class="row" style="flex-direction:column;align-items:stretch;gap:12px;">
+      <input id="loginUsername" placeholder="שם משתמש" autocomplete="username">
+      <input id="loginPin" placeholder="קוד (4 ספרות)" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password">
+      <button id="loginBtn" onclick="doLogin()">כניסה</button>
+      <div id="loginStatus" class="status-line"></div>
+    </div>
+  </div>
+</div>
+
+<div id="appShell">
+  <header>
+    <div class="title">שולחן עבודה - ניהול</div>
+    <div class="row">
+      <div class="bell" id="bellIcon" onclick="toggleNotifPanel()">🔔<span class="dot" id="bellDot" style="display:none;">0</span></div>
+      <span class="muted" id="whoAmI"></span>
+      <button class="secondary" onclick="logout()">יציאה</button>
+    </div>
+  </header>
+  <nav id="navBar"></nav>
+  <main id="mainArea"></main>
+</div>
+
+<script>
+const API = "";
+let TOKEN = localStorage.getItem("sulchan_token") || "";
+let ME = null;
+let BRANCHES = [];
+let currentTab = "dashboard";
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, {
+    method: opts.method || "GET",
+    headers: { "Content-Type": "application/json", ...(TOKEN ? { Authorization: "Bearer " + TOKEN } : {}) },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ("שגיאה " + res.status));
+  return data;
+}
+
+async function doLogin() {
+  const username = document.getElementById("loginUsername").value.trim();
+  const pin = document.getElementById("loginPin").value.trim();
+  const statusEl = document.getElementById("loginStatus");
+  statusEl.textContent = ""; statusEl.className = "status-line";
+  if (!username || !pin) { statusEl.textContent = "נא להזין שם משתמש וקוד"; statusEl.className = "status-line err"; return; }
+  try {
+    const data = await api("/api/login", { method: "POST", body: { username, pin } });
+    TOKEN = data.token;
+    localStorage.setItem("sulchan_token", TOKEN);
+    await boot();
+  } catch (e) {
+    statusEl.textContent = e.message; statusEl.className = "status-line err";
+  }
+}
+function logout() {
+  TOKEN = ""; localStorage.removeItem("sulchan_token"); ME = null;
+  document.getElementById("appShell").style.display = "none";
+  document.getElementById("loginScreen").style.display = "flex";
+}
+
+async function boot() {
+  try {
+    const data = await api("/api/me");
+    ME = data.user;
+  } catch (e) {
+    logout(); return;
+  }
+  document.getElementById("loginScreen").style.display = "none";
+  document.getElementById("appShell").style.display = "block";
+  document.getElementById("whoAmI").textContent = `${ME.fullName} (${ME.role === "admin" ? "מנהל" : "עובד"})`;
+  const branchData = await api("/api/branches");
+  BRANCHES = branchData.branches;
+  buildNav();
+  showTab(ME.role === "admin" ? "dashboard" : "myInstructions");
+  if (ME.role === "admin") { loadNotifications(); setInterval(loadNotifications, 30000); }
+}
+
+function buildNav() {
+  const tabs = ME.role === "admin"
+    ? [["dashboard","לוח בקרה"],["branches","סניפים"],["instructions","הוראות"],["reports","דיווחים"],["chat","צ'אט"],["users","משתמשים"],["finance","כספים"]]
+    : [["myInstructions","ההוראות שלי"],["myReport","דיווח"],["chat","צ'אט"]];
+  const nav = document.getElementById("navBar");
+  nav.innerHTML = "";
+  tabs.forEach(([key,label]) => {
+    const btn = document.createElement("button");
+    btn.textContent = label; btn.onclick = () => showTab(key);
+    btn.id = "navtab_" + key;
+    nav.appendChild(btn);
+  });
+}
+function setActiveNav(key) {
+  document.querySelectorAll("nav button").forEach(b => b.classList.remove("active"));
+  const el = document.getElementById("navtab_" + key);
+  if (el) el.classList.add("active");
+}
+
+function showTab(key) {
+  currentTab = key;
+  setActiveNav(key);
+  const renderers = {
+    dashboard: renderDashboard, branches: renderBranches, instructions: renderInstructions,
+    reports: renderReports, chat: renderChatThreads, users: renderUsers, finance: renderFinance,
+    myInstructions: renderMyInstructions, myReport: renderMyReport,
+  };
+  (renderers[key] || (() => {}))();
+}
+
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function fmtDate(s) { if (!s) return ""; return String(s).replace("T", " ").slice(0, 16); }
+
+// ---------- לוח בקרה ----------
+async function renderDashboard() {
+  const main = document.getElementById("mainArea");
+  main.innerHTML = "<div class='muted'>טוען...</div>";
+  const [reportsData, instrData] = await Promise.all([api("/api/reports"), api("/api/instructions")]);
+  const reports = reportsData.reports.slice(0, 10);
+  const pendingInstr = instrData.instructions.filter(i => i.status === "pending").length;
+  main.innerHTML = `
+    <div class="grid3" style="margin-bottom:16px;">
+      <div class="stat"><div class="n">${BRANCHES.length}</div><div class="l">סניפים פעילים</div></div>
+      <div class="stat"><div class="n">${pendingInstr}</div><div class="l">הוראות ממתינות</div></div>
+      <div class="stat"><div class="n">${reportsData.reports.length}</div><div class="l">סה"כ דיווחים</div></div>
+    </div>
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:10px;">דיווחים אחרונים</div>
+      <table><thead><tr><th>סניף</th><th>עובד</th><th>סטטוס</th><th>הערה</th><th>מתי</th></tr></thead>
+      <tbody>${reports.map(r => `<tr><td>${esc(r.branch_name)}</td><td>${esc(r.worker_name)}</td>
+        <td><span class="badge ${r.status_code}">${statusLabel(r.status_code)}</span></td>
+        <td>${esc(r.note_text || "-")}</td><td class="muted">${fmtDate(r.created_at)}</td></tr>`).join("") || "<tr><td colspan='5' class='muted'>אין דיווחים עדיין</td></tr>"}
+      </tbody></table>
+    </div>`;
+}
+function statusLabel(code) {
+  return { done: "בוצע", not_done: "לא בוצע", issue: "יש בעיה", skip: "דולג", other: "אחר" }[code] || code;
+}
+
+// ---------- סניפים ----------
+async function renderBranches() {
+  const main = document.getElementById("mainArea");
+  main.innerHTML = `
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:10px;">הוספת סניף</div>
+      <div class="row">
+        <input id="newBranchName" placeholder="שם הסניף" style="flex:1;">
+        <input id="newBranchAddress" placeholder="כתובת" style="flex:2;">
+        <button onclick="addBranch()">הוספה</button>
+      </div>
+      <div id="branchStatus" class="status-line"></div>
+    </div>
+    <div class="card"><table><thead><tr><th>שם</th><th>כתובת</th><th>מוטבים</th><th></th></tr></thead>
+    <tbody id="branchesTableBody"></tbody></table></div>`;
+  const tbody = document.getElementById("branchesTableBody");
+  tbody.innerHTML = BRANCHES.map(b => `<tr>
+    <td>${esc(b.name)}</td><td class="muted">${esc(b.address || "-")}</td>
+    <td><button class="secondary" onclick="openBeneficiaries(${b.id}, '${esc(b.name).replace(/'/g,"\\'")}')">ניהול מוטבים</button></td>
+    <td><button class="danger" onclick="deleteBranch(${b.id})">מחיקה</button></td>
+  </tr>`).join("");
+}
+async function addBranch() {
+  const name = document.getElementById("newBranchName").value.trim();
+  const address = document.getElementById("newBranchAddress").value.trim();
+  const statusEl = document.getElementById("branchStatus");
+  if (!name) { statusEl.textContent = "נא להזין שם"; statusEl.className = "status-line err"; return; }
+  try {
+    await api("/api/branches", { method: "POST", body: { name, address } });
+    const data = await api("/api/branches"); BRANCHES = data.branches;
+    renderBranches();
+  } catch (e) { statusEl.textContent = e.message; statusEl.className = "status-line err"; }
+}
+async function deleteBranch(id) {
+  if (!confirm("למחוק את הסניף?")) return;
+  await api("/api/branches/" + id, { method: "DELETE" });
+  const data = await api("/api/branches"); BRANCHES = data.branches;
+  renderBranches();
+}
+async function openBeneficiaries(branchId, branchName) {
+  const data = await api(`/api/branches/${branchId}/beneficiaries`);
+  const main = document.getElementById("mainArea");
+  main.innerHTML = `
+    <button class="secondary" onclick="renderBranches()">→ חזרה לסניפים</button>
+    <div class="card" style="margin-top:14px;">
+      <div style="font-weight:700;margin-bottom:10px;">מוטבים למשכורת - ${esc(branchName)}</div>
+      <div class="row">
+        <input id="benName" placeholder="שם המוטב" style="flex:1;">
+        <input id="benPhone" placeholder="טלפון">
+        <input id="benAmount" placeholder="סכום חודשי" type="number">
+        <button onclick="addBeneficiary(${branchId}, '${esc(branchName).replace(/'/g,"\\'")}')">הוספה</button>
+      </div>
+      <table style="margin-top:14px;"><thead><tr><th>שם</th><th>טלפון</th><th>סכום חודשי</th><th></th></tr></thead>
+      <tbody>${data.beneficiaries.map(b => `<tr><td>${esc(b.name)}</td><td>${esc(b.phone||"-")}</td>
+        <td>${b.monthly_amount ? "₪"+b.monthly_amount : "-"}</td>
+        <td><button class="danger" onclick="deleteBeneficiary(${b.id}, ${branchId}, '${esc(branchName).replace(/'/g,"\\'")}')">מחיקה</button></td></tr>`).join("") || "<tr><td colspan='4' class='muted'>אין מוטבים עדיין</td></tr>"}
+      </tbody></table>
+    </div>`;
+}
+async function addBeneficiary(branchId, branchName) {
+  const name = document.getElementById("benName").value.trim();
+  const phone = document.getElementById("benPhone").value.trim();
+  const monthlyAmount = document.getElementById("benAmount").value;
+  if (!name) return;
+  await api(`/api/branches/${branchId}/beneficiaries`, { method: "POST", body: { name, phone, monthlyAmount: monthlyAmount ? Number(monthlyAmount) : null } });
+  openBeneficiaries(branchId, branchName);
+}
+async function deleteBeneficiary(id, branchId, branchName) {
+  await api("/api/beneficiaries/" + id, { method: "DELETE" });
+  openBeneficiaries(branchId, branchName);
+}
+
+// ---------- הוראות (מנהל) ----------
+async function renderInstructions() {
+  const main = document.getElementById("mainArea");
+  const [instrData, usersData] = await Promise.all([api("/api/instructions"), api("/api/users")]);
+  const workers = usersData.users.filter(u => u.role === "worker" && u.active);
+  main.innerHTML = `
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:10px;">שליחת הוראה חדשה</div>
+      <div class="row" style="margin-bottom:8px;">
+        <select id="instrBranch" style="flex:1;">${BRANCHES.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join("")}</select>
+        <select id="instrWorker" style="flex:1;">${workers.map(w => `<option value="${w.id}">${esc(w.full_name)}</option>`).join("") || "<option disabled>אין עובדים - הוסיפו בטאב משתמשים</option>"}</select>
+      </div>
+      <textarea id="instrText" placeholder="תוכן ההוראה..." rows="3"></textarea>
+      <div class="row" style="margin-top:8px;"><button onclick="sendInstruction()" ${workers.length ? "" : "disabled"}>שליחה</button></div>
+      <div id="instrStatus" class="status-line"></div>
+    </div>
+    <div class="card"><table><thead><tr><th>סניף</th><th>עובד</th><th>הוראה</th><th>סטטוס</th><th>נשלח במייל</th><th>מתי</th></tr></thead>
+    <tbody>${instrData.instructions.map(i => `<tr><td>${esc(i.branch_name)}</td><td>${esc(i.worker_name)}</td>
+      <td>${esc(i.text)}</td><td><span class="badge ${i.status === 'pending' ? 'pending' : 'done'}">${i.status === 'pending' ? 'ממתין' : 'טופל'}</span></td>
+      <td>${i.email_sent ? "✔" : "-"}</td><td class="muted">${fmtDate(i.created_at)}</td></tr>`).join("") || "<tr><td colspan='6' class='muted'>אין הוראות עדיין</td></tr>"}
+    </tbody></table></div>`;
+}
+async function sendInstruction() {
+  const branchId = document.getElementById("instrBranch").value;
+  const workerUserId = document.getElementById("instrWorker").value;
+  const text = document.getElementById("instrText").value.trim();
+  const statusEl = document.getElementById("instrStatus");
+  if (!text) { statusEl.textContent = "נא להזין תוכן הוראה"; statusEl.className = "status-line err"; return; }
+  try {
+    const res = await api("/api/instructions", { method: "POST", body: { branchId: Number(branchId), workerUserId: Number(workerUserId), text } });
+    statusEl.textContent = res.emailSent ? "נשלח במייל בהצלחה." : "נשמר (לעובד אין כתובת מייל - יישמע רק בטלפון)."; statusEl.className = "status-line ok";
+    renderInstructions();
+  } catch (e) { statusEl.textContent = e.message; statusEl.className = "status-line err"; }
+}
+
+// ---------- דיווחים (מנהל) ----------
+async function renderReports() {
+  const main = document.getElementById("mainArea");
+  const data = await api("/api/reports");
+  main.innerHTML = `<div class="card"><table><thead><tr><th>סניף</th><th>עובד</th><th>סטטוס</th><th>הערה</th><th>מקור</th><th>מתי</th></tr></thead>
+    <tbody>${data.reports.map(r => `<tr><td>${esc(r.branch_name)}</td><td>${esc(r.worker_name)}</td>
+      <td><span class="badge ${r.status_code}">${statusLabel(r.status_code)}</span></td>
+      <td>${esc(r.note_text || "-")}</td><td class="muted">${r.source === "phone" ? "טלפון" : "אתר"}</td>
+      <td class="muted">${fmtDate(r.created_at)}</td></tr>`).join("") || "<tr><td colspan='6' class='muted'>אין דיווחים עדיין</td></tr>"}
+    </tbody></table></div>`;
+}
+
+// ---------- משתמשים (מנהל) ----------
+async function renderUsers() {
+  const main = document.getElementById("mainArea");
+  const data = await api("/api/users");
+  main.innerHTML = `
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:10px;">הוספת משתמש</div>
+      <div class="row" style="margin-bottom:8px;">
+        <input id="uFullName" placeholder="שם מלא" style="flex:1;">
+        <input id="uUsername" placeholder="שם משתמש" style="flex:1;">
+        <input id="uPin" placeholder="קוד 4 ספרות" maxlength="4" style="width:120px;">
+        <select id="uRole" style="width:120px;"><option value="worker">עובד</option><option value="admin">מנהל</option></select>
+      </div>
+      <div class="row" style="margin-bottom:8px;">
+        <input id="uPhone" placeholder="טלפון (לזיהוי בשלוחה)" style="flex:1;">
+        <input id="uEmail" placeholder="מייל" style="flex:1;">
+      </div>
+      <button onclick="addUser()">הוספה</button>
+      <div id="userStatus" class="status-line"></div>
+    </div>
+    <div class="card"><table><thead><tr><th>שם</th><th>שם משתמש</th><th>תפקיד</th><th>טלפון</th><th>מייל</th><th>סניפים</th></tr></thead>
+    <tbody>${data.users.map(u => `<tr><td>${esc(u.full_name)}</td><td class="muted">${esc(u.username)}</td>
+      <td>${u.role === "admin" ? "מנהל" : "עובד"}</td><td>${esc(u.phone||"-")}</td><td>${esc(u.email||"-")}</td>
+      <td>${u.role === "worker" ? `<button class="secondary" onclick="openWorkerBranches(${u.id}, '${esc(u.full_name).replace(/'/g,"\\'")}')">שיוך סניפים</button>` : "-"}</td>
+    </tr>`).join("")}</tbody></table></div>`;
+}
+async function addUser() {
+  const fullName = document.getElementById("uFullName").value.trim();
+  const username = document.getElementById("uUsername").value.trim();
+  const pin = document.getElementById("uPin").value.trim();
+  const role = document.getElementById("uRole").value;
+  const phone = document.getElementById("uPhone").value.trim();
+  const email = document.getElementById("uEmail").value.trim();
+  const statusEl = document.getElementById("userStatus");
+  try {
+    await api("/api/users", { method: "POST", body: { fullName, username, pin, role, phone, email } });
+    statusEl.textContent = "נוסף בהצלחה"; statusEl.className = "status-line ok";
+    renderUsers();
+  } catch (e) { statusEl.textContent = e.message; statusEl.className = "status-line err"; }
+}
+async function openWorkerBranches(workerId, workerName) {
+  const [assigned, all] = await Promise.all([api(`/api/users/${workerId}/branches`), Promise.resolve({ branches: BRANCHES })]);
+  const assignedIds = new Set(assigned.branches.map(b => b.id));
+  const main = document.getElementById("mainArea");
+  main.innerHTML = `
+    <button class="secondary" onclick="renderUsers()">→ חזרה למשתמשים</button>
+    <div class="card" style="margin-top:14px;">
+      <div style="font-weight:700;margin-bottom:10px;">סניפים המשויכים ל${esc(workerName)}</div>
+      ${all.branches.map(b => `<label class="row" style="margin-bottom:6px;">
+        <input type="checkbox" style="width:auto;" ${assignedIds.has(b.id) ? "checked" : ""}
+          onchange="toggleWorkerBranch(${workerId}, ${b.id}, this.checked, '${esc(workerName).replace(/'/g,"\\'")}')">
+        ${esc(b.name)}</label>`).join("")}
+    </div>`;
+}
+async function toggleWorkerBranch(workerId, branchId, checked, workerName) {
+  if (checked) await api(`/api/users/${workerId}/branches`, { method: "POST", body: { branchId } });
+  else await api(`/api/users/${workerId}/branches/${branchId}`, { method: "DELETE" });
+}
+
+// ---------- צ'אט ----------
+async function renderChatThreads() {
+  const main = document.getElementById("mainArea");
+  if (ME.role === "worker") {
+    // עובד: בוחר סניף מתוך המשויכים לו ופותח צ'אט ישירות
+    const data = await api(`/api/users/${ME.id}/branches`);
+    if (!data.branches.length) { main.innerHTML = "<div class='card muted'>אינכם משויכים לאף סניף עדיין.</div>"; return; }
+    main.innerHTML = `<div class="card"><div class="row">${data.branches.map(b =>
+      `<button class="secondary" onclick="openChat(${b.id}, ${ME.id})">${esc(b.name)}</button>`).join("")}</div></div>
+      <div id="chatArea"></div>`;
+    if (data.branches.length === 1) openChat(data.branches[0].id, ME.id);
+    return;
+  }
+  const data = await api("/api/chat/threads");
+  main.innerHTML = `<div class="card"><table><thead><tr><th>סניף</th><th>עובד</th><th>הודעה אחרונה</th><th>לא נקראו</th><th></th></tr></thead>
+    <tbody>${data.threads.map(t => `<tr><td>${esc(t.branch_name)}</td><td>${esc(t.worker_name)}</td>
+      <td class="muted">${fmtDate(t.last_message_at)}</td><td>${t.unread_count > 0 ? `<span class="badge pending">${t.unread_count}</span>` : "-"}</td>
+      <td><button class="secondary" onclick="openChat(${t.branch_id}, ${t.worker_user_id})">פתיחה</button></td></tr>`).join("") || "<tr><td colspan='5' class='muted'>אין שיחות עדיין</td></tr>"}
+    </tbody></table></div><div id="chatArea"></div>`;
+}
+async function openChat(branchId, workerId) {
+  const data = await api(`/api/chat/${branchId}/${workerId}`);
+  const area = document.getElementById("chatArea") || document.getElementById("mainArea");
+  area.innerHTML = `<div class="card">
+    <div id="chatMessages" style="max-height:400px;overflow-y:auto;display:flex;flex-direction:column;margin-bottom:12px;">
+      ${data.messages.map(m => `<div class="msg ${m.sender_user_id === ME.id ? 'mine' : 'theirs'}">
+        ${esc(m.text)}<div class="meta">${esc(m.sender_name)} · ${fmtDate(m.created_at)}</div></div>`).join("") || "<div class='muted'>אין הודעות עדיין</div>"}
+    </div>
+    <div class="row"><input id="chatInput" placeholder="הודעה..." style="flex:1;" onkeydown="if(event.key==='Enter')sendChat(${branchId},${workerId})">
+      <button onclick="sendChat(${branchId},${workerId})">שליחה</button></div>
+  </div>`;
+}
+async function sendChat(branchId, workerId) {
+  const input = document.getElementById("chatInput");
+  const text = input.value.trim();
+  if (!text) return;
+  await api(`/api/chat/${branchId}/${workerId}`, { method: "POST", body: { text } });
+  input.value = "";
+  openChat(branchId, workerId);
+}
+
+// ---------- כספים (מנהל) ----------
+async function renderFinance() {
+  const main = document.getElementById("mainArea");
+  const [txData, trendData] = await Promise.all([api("/api/transactions"), api("/api/transactions/trend")]);
+  main.innerHTML = `
+    <div class="grid3" style="margin-bottom:16px;">
+      <div class="stat"><div class="n">₪${trunc(txData.summary.income)}</div><div class="l">הכנסות</div></div>
+      <div class="stat"><div class="n">₪${trunc(txData.summary.expense)}</div><div class="l">הוצאות</div></div>
+      <div class="stat"><div class="n">₪${trunc(txData.summary.balance)}</div><div class="l">מאזן</div></div>
+    </div>
+    <div class="card"><div style="font-weight:700;margin-bottom:10px;">מגמה חודשית</div>
+      <div class="chart-wrap">${renderTrendChart(trendData.trend)}</div></div>
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:10px;">הוספת תנועה ידנית</div>
+      <div class="row">
+        <select id="txType" style="width:110px;"><option value="expense">הוצאה</option><option value="income">הכנסה</option></select>
+        <input id="txAmount" type="number" placeholder="סכום" style="width:120px;">
+        <input id="txCategory" placeholder="קטגוריה">
+        <select id="txBranch" style="width:160px;"><option value="">- כללי -</option>${BRANCHES.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join("")}</select>
+        <button onclick="addTransaction()">הוספה</button>
+      </div>
+    </div>
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:10px;">ייבוא דוח בנק/אשראי (Excel / CSV / PDF)</div>
+      <input type="file" id="importFile" accept=".xlsx,.csv,.pdf,.xls">
+      <select id="importSourceType" style="width:140px;margin-top:8px;"><option value="bank">דף בנק</option><option value="card">דף אשראי</option></select>
+      <button onclick="parseImportFile()" style="margin-top:8px;">קרא קובץ</button>
+      <div id="importStatus" class="status-line"></div>
+      <div id="importPreview"></div>
+    </div>
+    <div class="card"><table><thead><tr><th>תאריך</th><th>סוג</th><th>סכום</th><th>קטגוריה</th><th>סניף</th><th></th></tr></thead>
+    <tbody>${txData.transactions.slice(0,50).map(t => `<tr><td class="muted">${fmtDate(t.occurred_at)}</td>
+      <td>${t.type === "income" ? "הכנסה" : "הוצאה"}</td><td>₪${t.amount}</td><td>${esc(t.category||"-")}</td>
+      <td>${esc(t.branch_name||"-")}</td><td><button class="danger" onclick="deleteTransaction(${t.id})">מחיקה</button></td></tr>`).join("") || "<tr><td colspan='6' class='muted'>אין תנועות עדיין</td></tr>"}
+    </tbody></table></div>`;
+}
+function trunc(n) { return Math.round(n).toLocaleString("he-IL"); }
+async function addTransaction() {
+  const type = document.getElementById("txType").value;
+  const amount = document.getElementById("txAmount").value;
+  const category = document.getElementById("txCategory").value.trim();
+  const branchId = document.getElementById("txBranch").value;
+  if (!amount) return;
+  await api("/api/transactions", { method: "POST", body: { type, amount: Number(amount), category, branchId: branchId ? Number(branchId) : null } });
+  renderFinance();
+}
+async function deleteTransaction(id) {
+  if (!confirm("למחוק?")) return;
+  await api("/api/transactions/" + id, { method: "DELETE" });
+  renderFinance();
+}
+function renderTrendChart(trend) {
+  if (!trend.length) return "<div class='muted'>אין עדיין מספיק נתונים לגרף</div>";
+  const w = Math.max(400, trend.length * 70), h = 200, pad = 30;
+  const maxVal = Math.max(1, ...trend.map(t => Math.max(t.income, t.expense)));
+  const barW = 18;
+  let bars = "";
+  trend.forEach((t, i) => {
+    const x = pad + i * ((w - pad * 2) / trend.length) + 10;
+    const incH = (t.income / maxVal) * (h - pad * 2);
+    const expH = (t.expense / maxVal) * (h - pad * 2);
+    bars += `<rect x="${x}" y="${h - pad - incH}" width="${barW}" height="${incH}" fill="var(--accent)"></rect>`;
+    bars += `<rect x="${x + barW + 3}" y="${h - pad - expH}" width="${barW}" height="${expH}" fill="var(--danger)"></rect>`;
+    bars += `<text x="${x + barW}" y="${h - 8}" font-size="10" fill="var(--muted)" text-anchor="middle">${t.month.slice(5)}</text>`;
+  });
+  return `<svg width="${w}" height="${h}" style="color:var(--text);">
+    <style>rect{opacity:.9;} text{font-family:'JetBrains Mono',monospace;}</style>
+    ${bars}<line x1="${pad}" y1="${h-pad}" x2="${w-pad}" y2="${h-pad}" stroke="var(--line)"></line>
+  </svg>
+  <div class="row" style="margin-top:6px;"><span class="muted">🟩 הכנסות</span><span class="muted">🟥 הוצאות</span></div>`;
+}
+let LAST_PARSED_ROWS = [];
+async function parseImportFile() {
+  const fileInput = document.getElementById("importFile");
+  const statusEl = document.getElementById("importStatus");
+  if (!fileInput.files.length) { statusEl.textContent = "בחרו קובץ"; statusEl.className = "status-line err"; return; }
+  const file = fileInput.files[0];
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const base64 = btoa(new Uint8Array(e.target.result).reduce((s, b) => s + String.fromCharCode(b), ""));
+    try {
+      const data = await api("/api/transactions/import/parse", { method: "POST", body: {
+        data_base64: base64, filename: file.name, source_type: document.getElementById("importSourceType").value,
+      }});
+      LAST_PARSED_ROWS = data.transactions;
+      statusEl.textContent = `נמצאו ${data.transactions.length} תנועות. בדקו ולחצו "ייבוא בפועל".`; statusEl.className = "status-line ok";
+      document.getElementById("importPreview").innerHTML = `
+        <table style="margin-top:10px;"><thead><tr><th>תאריך</th><th>סוג</th><th>סכום</th><th>תיאור</th></tr></thead>
+        <tbody>${data.transactions.slice(0,30).map(t => `<tr><td>${t.date}</td><td>${t.type==='income'?'הכנסה':'הוצאה'}</td><td>₪${t.amount}</td><td>${esc(t.description||"")}</td></tr>`).join("")}</tbody></table>
+        <button onclick="commitImport()" style="margin-top:10px;">ייבוא בפועל (${data.transactions.length} תנועות)</button>`;
+    } catch (err) { statusEl.textContent = err.message; statusEl.className = "status-line err"; }
+  };
+  reader.readAsArrayBuffer(file);
+}
+async function commitImport() {
+  const statusEl = document.getElementById("importStatus");
+  try {
+    const res = await api("/api/transactions/import/commit", { method: "POST", body: { transactions: LAST_PARSED_ROWS } });
+    statusEl.textContent = `יובאו ${res.imported} תנועות (${res.skippedDuplicates} כפילויות דולגו).`; statusEl.className = "status-line ok";
+    renderFinance();
+  } catch (e) { statusEl.textContent = e.message; statusEl.className = "status-line err"; }
+}
+
+// ---------- עובד: ההוראות שלי ----------
+async function renderMyInstructions() {
+  const main = document.getElementById("mainArea");
+  const data = await api("/api/instructions");
+  main.innerHTML = `<div class="card"><table><thead><tr><th>סניף</th><th>הוראה</th><th>סטטוס</th><th>מתי</th></tr></thead>
+    <tbody>${data.instructions.map(i => `<tr><td>${esc(i.branch_name)}</td><td>${esc(i.text)}</td>
+      <td><span class="badge ${i.status === 'pending' ? 'pending' : 'done'}">${i.status === 'pending' ? 'ממתין' : 'טופל'}</span></td>
+      <td class="muted">${fmtDate(i.created_at)}</td></tr>`).join("") || "<tr><td colspan='4' class='muted'>אין הוראות עדיין</td></tr>"}
+    </tbody></table></div>`;
+}
+
+// ---------- עובד: דיווח ----------
+async function renderMyReport() {
+  const main = document.getElementById("mainArea");
+  const data = await api(`/api/users/${ME.id}/branches`);
+  if (!data.branches.length) { main.innerHTML = "<div class='card muted'>אינכם משויכים לאף סניף עדיין - פנו למנהל.</div>"; return; }
+  main.innerHTML = `
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:10px;">דיווח חדש</div>
+      <select id="repBranch" style="margin-bottom:8px;">${data.branches.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join("")}</select>
+      <select id="repStatus" style="margin-bottom:8px;">
+        <option value="done">בוצע</option><option value="not_done">לא בוצע</option>
+        <option value="issue">יש בעיה / צריך חלקים</option><option value="other">אחר</option>
+      </select>
+      <textarea id="repNote" placeholder="הערה (רשות)" rows="3"></textarea>
+      <button onclick="submitMyReport()" style="margin-top:8px;">שליחת דיווח</button>
+      <div id="repStatusLine" class="status-line"></div>
+    </div>`;
+}
+async function submitMyReport() {
+  const branchId = document.getElementById("repBranch").value;
+  const statusCode = document.getElementById("repStatus").value;
+  const noteText = document.getElementById("repNote").value.trim();
+  const el = document.getElementById("repStatusLine");
+  try {
+    await api("/api/reports", { method: "POST", body: { branchId: Number(branchId), statusCode, noteText } });
+    el.textContent = "הדיווח נשלח בהצלחה."; el.className = "status-line ok";
+    document.getElementById("repNote").value = "";
+  } catch (e) { el.textContent = e.message; el.className = "status-line err"; }
+}
+
+// ---------- התראות (מנהל) ----------
+async function loadNotifications() {
+  if (ME.role !== "admin") return;
+  const data = await api("/api/notifications");
+  const dot = document.getElementById("bellDot");
+  if (data.unreadCount > 0) { dot.style.display = "inline-block"; dot.textContent = data.unreadCount; }
+  else dot.style.display = "none";
+}
+async function toggleNotifPanel() {
+  const data = await api("/api/notifications");
+  const list = data.notifications.slice(0, 15).map(n => `<div style="padding:8px 0;border-bottom:1px dashed var(--line);">
+    <div>${esc(n.text)}</div><div class="muted" style="font-size:11px;">${fmtDate(n.created_at)}</div></div>`).join("") || "<div class='muted'>אין התראות</div>";
+  const main = document.getElementById("mainArea");
+  main.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px;">
+    <div style="font-weight:700;">התראות</div><button class="secondary" onclick="markAllRead()">סמן הכל כנקרא</button></div>${list}</div>`;
+  await api("/api/notifications/read-all", { method: "PUT" }).catch(()=>{});
+  loadNotifications();
+}
+async function markAllRead() { await api("/api/notifications/read-all", { method: "PUT" }); loadNotifications(); toggleNotifPanel(); }
+
+document.getElementById("loginPin").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+if (TOKEN) boot();
+</script>

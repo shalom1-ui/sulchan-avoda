@@ -1,0 +1,6 @@
+node_modules/
+data/
+tests/test.db
+tests/test.db-wal
+tests/test.db-shm
+.env
