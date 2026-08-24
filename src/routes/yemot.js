@@ -20,6 +20,24 @@ const { sendEmail } = require("../services/email");
 const STATUS_LABELS = { "1": "done", "2": "not_done", "3": "issue", "9": "skip" };
 const STATUS_TEXT = { done: "בוצע", not_done: "לא בוצע", issue: "יש בעיה / צריך חלקים", skip: "דולג" };
 
+// מנרמל מספר טלפון להשוואה (מסיר תווים לא-ספרתיים, ממיר קידומת בינלאומית 972 ל-0 מקומי) - כך ש-
+// "972501234567", "0501234567" ו-"050-123-4567" ייחשבו כאותו מספר.
+function normalizePhone(p) {
+  const digits = String(p || "").replace(/\D/g, "");
+  return digits.startsWith("972") ? "0" + digits.slice(3) : digits;
+}
+
+// הגנה נוספת מעבר ל-PIN: בודקים את מספר הטלפון המתקשר (ApiPhone, נשלח ע"י ימות) מול הטלפונים
+// הרשומים לעובדים פעילים. אם אף עובד לא הזין טלפון במערכת - לא ניתן לאכוף את הבדיקה הזו, ולכן לא
+// חוסמים איש (כדי לא לנעול בטעות את כולם החוצה לפני שהמנהל הזין טלפונים - ר' README). אם ApiPhone
+// חסר (לא אמור לקרות במצב רגיל) - גם אז לא חוסמים, מאותה סיבה.
+function isKnownWorkerPhone(apiPhone) {
+  const knownPhones = db.prepare("SELECT phone FROM users WHERE role = 'worker' AND active = 1 AND phone IS NOT NULL AND phone != ''").all();
+  if (knownPhones.length === 0 || !apiPhone) return true;
+  const normalized = normalizePhone(apiPhone);
+  return knownPhones.some((w) => normalizePhone(w.phone) === normalized);
+}
+
 function getCall(callSid) {
   return db.prepare("SELECT * FROM call_logs WHERE call_sid = ?").get(callSid);
 }
@@ -102,8 +120,15 @@ function register(router) {
 
     const call = getCall(callSid);
 
-    // --- שיחה חדשה: מבקשים קוד זיהוי ---
+    // --- שיחה חדשה: קודם כל בודקים מספר מתקשר, ורק אז מבקשים קוד זיהוי ---
     if (!call) {
+      // מספר לא רשום לאף עובד - מנתקים מיד ובשקט, בלי לחשוף בכלל שהשלוחה הזו קיימת (לא משמיעים
+      // "ברוכים הבאים לקו שולחן העבודה" ולא מבקשים קוד) - ר' דרישת המשתמש: "מי שלא רשום לא יקבל
+      // את האפשרות לשמוע שיש כזה קו".
+      if (!isKnownWorkerPhone(ctx.body.ApiPhone)) {
+        console.log(`[YEMOT] שיחה נדחתה - מספר לא רשום (${ctx.body.ApiPhone || "לא ידוע"})`);
+        return text(ctx.res, 200, sayAndHangup(""));
+      }
       saveCall(callSid, "pin", {});
       return text(ctx.res, 200, sayAndReadDigits("ברוכים הבאים לקו שולחן העבודה. הקישו את קוד הזיהוי האישי שלכם, בן ארבע ספרות.", 4));
     }

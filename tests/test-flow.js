@@ -95,10 +95,20 @@ async function main() {
   const forbidden = await call("/api/transactions", { token: workerToken });
   ok(forbidden.status === 403, "עובד לא יכול לראות נתונים כספיים");
 
-  // --- שלוחת ימות: PIN של העובד (1234) מזהה אותו ---
-  const yemotCallSid = "test-call-1";
-  const yemotStart = await call("/yemot/instructions", { method: "POST", body: { ApiCallId: yemotCallSid } });
-  ok(yemotStart.status === 200, "שלוחת ימות עונה לשיחה חדשה");
+  // --- שלוחת ימות: PIN של העובד מזהה אותו (עדיין בלי טלפון רשום לאף עובד - הבדיקה לא נאכפת) ---
+  async function callRaw(path, body) {
+    const res = await fetch(base + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    return { status: res.status, text: await res.text() };
+  }
+  const yemotStart = await callRaw("/yemot/instructions", { ApiCallId: "test-call-1", ApiPhone: "0500000000" });
+  ok(yemotStart.status === 200 && yemotStart.text.includes("קוד הזיהוי"), "שלוחת ימות עונה לשיחה חדשה (אין עדיין טלפונים רשומים - לא חוסמת)");
+
+  // --- עכשיו רושמים טלפון לעובד, ובודקים חסימה של מספר לא מוכר + מעבר של מספר מוכר ---
+  await call(`/api/users/${workerId}`, { method: "PUT", token: adminToken, body: { phone: "0501112222" } });
+  const yemotBlocked = await callRaw("/yemot/instructions", { ApiCallId: "test-call-2", ApiPhone: "0509998888" });
+  ok(yemotBlocked.status === 200 && !yemotBlocked.text.includes("קוד הזיהוי") && !yemotBlocked.text.includes("שולחן העבודה"), "מספר לא רשום נחסם בשקט, בלי לגלות שהשלוחה קיימת");
+  const yemotAllowed = await callRaw("/yemot/instructions", { ApiCallId: "test-call-3", ApiPhone: "050-111-2222" });
+  ok(yemotAllowed.status === 200 && yemotAllowed.text.includes("קוד הזיהוי"), "מספר רשום (גם עם מקפים) עובר וממשיך לבקשת קוד");
 
   await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   // ניקוי קובץ ה-DB הזמני - לא קריטי אם נכשל (למשל נעילת קובץ ב-Windows); לא מפיל את הבדיקות.
