@@ -110,6 +110,16 @@ async function main() {
   const yemotAllowed = await callRaw("/yemot/instructions", { ApiCallId: "test-call-3", ApiPhone: "050-111-2222" });
   ok(yemotAllowed.status === 200 && yemotAllowed.text.includes("קוד הזיהוי"), "מספר רשום (גם עם מקפים) עובר וממשיך לבקשת קוד");
 
+  // --- תפריט ראשי משותף (שלוחה 1): מבקש ספרה, ואז מפנה לשלוחה הנכונה ---
+  const menuStart = await callRaw("/yemot/main-menu", { ApiCallId: "test-call-menu-1" });
+  ok(menuStart.status === 200 && menuStart.text.includes("שולחן עבודה"), "התפריט הראשי מציע את שתי האפשרויות");
+  const menuPickWork = await callRaw("/yemot/main-menu", { ApiCallId: "test-call-menu-1", speech: "2" });
+  ok(menuPickWork.status === 200 && menuPickWork.text.includes("g-/3"), "בחירת 2 מפנה לשלוחה 3 (שולחן עבודה)");
+  const menuPickAccounts = await callRaw("/yemot/main-menu", { ApiCallId: "test-call-menu-2" }).then(() =>
+    callRaw("/yemot/main-menu", { ApiCallId: "test-call-menu-2", speech: "1" })
+  );
+  ok(menuPickAccounts.status === 200 && menuPickAccounts.text.includes("g-/4"), "בחירת 1 מפנה לשלוחה 4 (ניהול חשבונות)");
+
   await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   // ניקוי קובץ ה-DB הזמני - לא קריטי אם נכשל (למשל נעילת קובץ ב-Windows); לא מפיל את הבדיקות.
   try {

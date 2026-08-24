@@ -113,6 +113,30 @@ function askNextInstruction(ctx, callSid, draft) {
 }
 
 function register(router) {
+  // תפריט ראשי משותף לקו (שלוחה 1): "לניהול חשבונות הקישו 1, לשולחן עבודה הקישו 2" וכו'.
+  // בכוונה **לא** משתמשים בשום סוג שלוחה מובנה של ימות שלא אומת (type=menu וכיו"ב) - במקום זה
+  // בונים תפריט בעצמנו מתוך שני מנגנונים שכבר הוכחו כעובדים בפועל: read= (בקשת ספרה, בדיוק כמו
+  // sayAndReadMenuDigit במסלול ההוראות) ו-id_list_message=...g-/<שלוחה> (מעבר לשלוחה אחרת, אותו
+  // מנגנון בדיוק כמו sayAndGoToRecordExtension). כל שלוחת יעד (1/2/וכו') מכילה type=api רגיל שמצביע
+  // על שרת - זהה לגמרי לאיך שכל שלוחת API בודדת כבר עובדת, רק שהניתוב הראשוני מגיע מכאן ולא ישירות.
+  // ר' README "בניית תפריט ראשי משותף" למספרי השלוחות בפועל שהוגדרו (ניתן לעדכן כאן אם משתנים).
+  const MAIN_MENU_TARGETS = { "1": { extension: "4", label: "ניהול חשבונות" }, "2": { extension: "3", label: "שולחן עבודה" } };
+
+  router.post("/yemot/main-menu", async (ctx) => {
+    const callSid = ctx.body.ApiCallId;
+    const digit = String(ctx.body[VAL_NAME] || "").trim();
+    if (!callSid) return text(ctx.res, 400, "");
+    const call = getCall(callSid);
+    if (!call) {
+      saveCall(callSid, "main_menu", {});
+      return text(ctx.res, 200, sayAndReadMenuDigit("לניהול חשבונות הקישו 1. לשולחן עבודה הקישו 2."));
+    }
+    endCall(callSid);
+    const target = MAIN_MENU_TARGETS[digit];
+    if (!target) return text(ctx.res, 200, sayAndHangup("לא זוהתה בחירה תקינה. נסו להתקשר שוב."));
+    return text(ctx.res, 200, sayAndGoToRecordExtension("", target.extension));
+  });
+
   router.post("/yemot/instructions", async (ctx) => {
     const callSid = ctx.body.ApiCallId;
     const digit = String(ctx.body[VAL_NAME] || "").trim();
