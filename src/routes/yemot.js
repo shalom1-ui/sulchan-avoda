@@ -125,22 +125,30 @@ function register(router) {
   router.post("/yemot/main-menu", async (ctx) => {
     const callSid = ctx.body.ApiCallId;
     const digit = String(ctx.body[VAL_NAME] || "").trim();
+    console.log(`[YEMOT] main-menu בקשה: ApiCallId=${callSid} ApiPhone=${ctx.body.ApiPhone || "?"} digit="${digit}"`);
     if (!callSid) return text(ctx.res, 400, "");
     const call = getCall(callSid);
     if (!call) {
       saveCall(callSid, "main_menu", {});
-      return text(ctx.res, 200, sayAndReadMenuDigit("לניהול חשבונות הקישו 1. לשולחן עבודה הקישו 2."));
+      const resp = sayAndReadMenuDigit("לניהול חשבונות הקישו 1. לשולחן עבודה הקישו 2.");
+      console.log(`[YEMOT] main-menu תשובה (שיחה חדשה): ${resp}`);
+      return text(ctx.res, 200, resp);
     }
     endCall(callSid);
     const target = MAIN_MENU_TARGETS[digit];
-    if (!target) return text(ctx.res, 200, sayAndHangup("לא זוהתה בחירה תקינה. נסו להתקשר שוב."));
-    return text(ctx.res, 200, sayAndGoToRecordExtension("", target.extension));
+    if (!target) {
+      console.log(`[YEMOT] main-menu בחירה לא תקינה: "${digit}"`);
+      return text(ctx.res, 200, sayAndHangup("לא זוהתה בחירה תקינה. נסו להתקשר שוב."));
+    }
+    const resp = sayAndGoToRecordExtension("", target.extension);
+    console.log(`[YEMOT] main-menu מנתב ל-${target.label} (שלוחה ${target.extension}): ${resp}`);
+    return text(ctx.res, 200, resp);
   });
 
   router.post("/yemot/instructions", async (ctx) => {
     const callSid = ctx.body.ApiCallId;
     const digit = String(ctx.body[VAL_NAME] || "").trim();
-    if (!callSid) return text(ctx.res, 400, "");
+    console.log(`[YEMOT] instructions בקשה: ApiCallId=${callSid} ApiPhone=${ctx.body.ApiPhone || "?"} digit="${digit}"`);
 
     const call = getCall(callSid);
 

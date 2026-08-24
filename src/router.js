@@ -41,6 +41,9 @@ class Router {
 
     const match = this.routes.find(r => r.method === req.method && r.pattern.test(pathname));
     if (!match) {
+      // לוג אבחון לכל בקשה שלא תואמת שום נתיב - שימושי במיוחד לבדוק אם ימות המשיח בכלל מגיע
+      // לשרת (למשל אם ה-method או הנתיב לא בדיוק מה שציפינו), ר' routes/yemot.js.
+      console.log(`[ROUTER] נתיב לא נמצא: ${req.method} ${pathname}`);
       res.writeHead(404, { "Content-Type": "application/json; charset=utf-8" });
       res.end(JSON.stringify({ error: "לא נמצא נתיב מתאים" }));
       return;
