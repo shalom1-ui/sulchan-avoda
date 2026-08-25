@@ -39,6 +39,7 @@ require("./routes/beneficiaries").register(router);
 require("./routes/instructions").register(router);
 require("./routes/reports").register(router);
 require("./routes/chat").register(router);
+require("./routes/adminChat").register(router);
 require("./routes/notifications").register(router);
 require("./routes/transactions").register(router);
 require("./routes/importTransactions").register(router);

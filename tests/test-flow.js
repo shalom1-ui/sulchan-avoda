@@ -41,6 +41,11 @@ async function main() {
   ok(login.status === 200 && login.data.token, "מנהל מתחבר בהצלחה");
   const adminToken = login.data.token;
 
+  const login2 = await call("/api/login", { method: "POST", body: { username: "admin2", pin: "0000" } });
+  ok(login2.status === 200 && login2.data.token, "מנהל שני (admin2) מתחבר בהצלחה");
+  const admin2Token = login2.data.token;
+  const admin2Id = login2.data.user.id;
+
   const health = await call("/api/health");
   ok(health.status === 200 && health.data.status === "ok", "בדיקת חיים תקינה");
 
@@ -86,6 +91,22 @@ async function main() {
   // --- מנהל שולח הודעת צ'אט לעובד (כיוון הפוך) - נשלח מייל לעובד (MOCK), לא אמור לזרוק שגיאה ---
   const adminChat = await call(`/api/chat/${branchId}/${workerId}`, { method: "POST", token: adminToken, body: { text: "תודה על העבודה!" } });
   ok(adminChat.status === 201, "מנהל שולח הודעת צ'אט לעובד (עם שליחת מייל ברקע)");
+
+  // --- צ'אט בין מנהלים (admin1 <-> admin2), נפרד מהצ'אט לפי סניף ---
+  const peers = await call("/api/admin-chat/peers", { token: adminToken });
+  ok(peers.status === 200 && peers.data.peers.some(p => p.id === admin2Id), "מנהל 1 רואה את מנהל 2 ברשימת המנהלים לצ'אט");
+
+  const adminMsg1 = await call(`/api/admin-chat/${admin2Id}`, { method: "POST", token: adminToken, body: { text: "שלום מנהל 2" } });
+  ok(adminMsg1.status === 201, "מנהל 1 שולח הודעה למנהל 2");
+
+  const adminThreadsForAdmin2 = await call("/api/admin-chat/threads", { token: admin2Token });
+  ok(adminThreadsForAdmin2.status === 200 && adminThreadsForAdmin2.data.threads.length === 1 && adminThreadsForAdmin2.data.threads[0].unread_count === 1, "מנהל 2 רואה שרשור עם הודעה אחת לא-נקראה");
+
+  const adminMsgsRead = await call(`/api/admin-chat/${login.data.user.id}`, { token: admin2Token });
+  ok(adminMsgsRead.status === 200 && adminMsgsRead.data.messages.length === 1, "מנהל 2 קורא את הודעת מנהל 1 (וזה מסמן אותה כנקראה)");
+
+  const workerCannotAdminChat = await call(`/api/admin-chat/${admin2Id}`, { method: "POST", token: workerToken, body: { text: "לא אמור לעבוד" } });
+  ok(workerCannotAdminChat.status === 403, "עובד לא יכול לשלוח בצ'אט מנהלים (מוגבל למנהלים בלבד)");
 
   const ben = await call(`/api/branches/${branchId}/beneficiaries`, { method: "POST", token: adminToken, body: {
     name: "מוטב בדיקה", monthlyAmount: 500,

@@ -99,6 +99,17 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
+  -- צ'אט בין מנהלים (נפרד מ-chat_messages, שהוא תמיד לפי סניף+עובד) - שיחה חופשית פשוטה בין שני
+  -- משתמשים מסוג admin, בלי הקשר של סניף (ר' משוב המשתמש: "לדבר גם עם מנהלים, לא רק עם עובדים").
+  CREATE TABLE IF NOT EXISTS admin_chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_user_id INTEGER NOT NULL REFERENCES users(id),
+    recipient_user_id INTEGER NOT NULL REFERENCES users(id),
+    text TEXT NOT NULL,
+    read_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
   -- הכנסות/הוצאות (אותו מבנה כמו "הפנקס שלי" - מאפשר להשתמש באותם ספריות ייבוא בנק/אשראי כמו שהן).
   CREATE TABLE IF NOT EXISTS transactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
