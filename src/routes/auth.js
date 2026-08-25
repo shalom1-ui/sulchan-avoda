@@ -23,7 +23,10 @@ function register(router) {
   router.get("/api/me", requireAuth(async (ctx) => {
     const user = db.prepare("SELECT id, full_name, username, role, phone, email FROM users WHERE id = ?").get(ctx.user.userId);
     if (!user) return json(ctx.res, 404, { error: "משתמש לא נמצא" });
-    return json(ctx.res, 200, { user });
+    // מיישרים ל-camelCase (fullName) - זהה לצורת התשובה של POST /api/login, כדי שהאתר (public/app.html)
+    // יוכל להשתמש ב-ME.fullName באופן עקבי בין השניים (הבאג היה: אחרי טעינה מחדש/כניסה עם טוקן קיים,
+    // boot() קורא ל-/api/me, וה-fullName יצא undefined כי כאן הוחזר full_name בלבד).
+    return json(ctx.res, 200, { user: { ...user, fullName: user.full_name } });
   }));
 
   // ניהול משתמשים (מנהלים בלבד) - יצירת עובד/מנהל חדש, עדכון קוד, השבתה.

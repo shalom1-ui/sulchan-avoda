@@ -339,11 +339,17 @@ async function renderUsers() {
       <button onclick="addUser()">הוספה</button>
       <div id="userStatus" class="status-line"></div>
     </div>
-    <div class="card"><table><thead><tr><th>שם</th><th>שם משתמש</th><th>תפקיד</th><th>טלפון</th><th>מייל</th><th>סניפים</th></tr></thead>
-    <tbody>${data.users.map(u => `<tr><td>${esc(u.full_name)}</td><td class="muted">${esc(u.username)}</td>
+    <div class="card"><table><thead><tr><th>שם</th><th>שם משתמש</th><th>תפקיד</th><th>טלפון</th><th>מייל</th><th>סניפים</th><th></th></tr></thead>
+    <tbody>${data.users.filter(u => u.active).map(u => `<tr><td>${esc(u.full_name)}</td><td class="muted">${esc(u.username)}</td>
       <td>${u.role === "admin" ? "מנהל" : "עובד"}</td><td>${esc(u.phone||"-")}</td><td>${esc(u.email||"-")}</td>
       <td>${u.role === "worker" ? `<button class="secondary" onclick="openWorkerBranches(${u.id}, '${esc(u.full_name).replace(/'/g,"\\'")}')">שיוך סניפים</button>` : "-"}</td>
+      <td><button class="danger" onclick="deleteUser(${u.id}, '${esc(u.full_name).replace(/'/g,"\\'")}')">מחיקה</button></td>
     </tr>`).join("")}</tbody></table></div>`;
+}
+async function deleteUser(id, fullName) {
+  if (!confirm(`למחוק את ${fullName}? (ניתן ליצור מחדש בעתיד, אך לא לשחזר את אותו חשבון)`)) return;
+  await api(`/api/users/${id}`, { method: "PUT", body: { active: false } });
+  renderUsers();
 }
 async function addUser() {
   const fullName = document.getElementById("uFullName").value.trim();
@@ -366,12 +372,24 @@ async function openWorkerBranches(workerId, workerName) {
   main.innerHTML = `
     <button class="secondary" onclick="renderUsers()">→ חזרה למשתמשים</button>
     <div class="card" style="margin-top:14px;">
-      <div style="font-weight:700;margin-bottom:10px;">סניפים המשויכים ל${esc(workerName)}</div>
+      <div class="row" style="justify-content:space-between;margin-bottom:10px;">
+        <div style="font-weight:700;">סניפים המשויכים ל${esc(workerName)}</div>
+        <button class="secondary" onclick="selectAllWorkerBranches(${workerId}, '${esc(workerName).replace(/'/g,"\\'")}')">סמן הכל</button>
+      </div>
+      <div id="branchCheckboxList">
       ${all.branches.map(b => `<label class="row" style="margin-bottom:6px;">
-        <input type="checkbox" style="width:auto;" ${assignedIds.has(b.id) ? "checked" : ""}
+        <input type="checkbox" style="width:auto;" data-branch-id="${b.id}" ${assignedIds.has(b.id) ? "checked" : ""}
           onchange="toggleWorkerBranch(${workerId}, ${b.id}, this.checked, '${esc(workerName).replace(/'/g,"\\'")}')">
         ${esc(b.name)}</label>`).join("")}
+      </div>
     </div>`;
+}
+async function selectAllWorkerBranches(workerId, workerName) {
+  const boxes = document.querySelectorAll("#branchCheckboxList input[type=checkbox]:not(:checked)");
+  for (const box of boxes) {
+    await api(`/api/users/${workerId}/branches`, { method: "POST", body: { branchId: Number(box.dataset.branchId) } });
+  }
+  openWorkerBranches(workerId, workerName);
 }
 async function toggleWorkerBranch(workerId, branchId, checked, workerName) {
   if (checked) await api(`/api/users/${workerId}/branches`, { method: "POST", body: { branchId } });
@@ -431,6 +449,8 @@ async function renderFinance() {
     </div>
     <div class="card"><div style="font-weight:700;margin-bottom:10px;">מגמה חודשית</div>
       <div class="chart-wrap">${renderTrendChart(trendData.trend)}</div></div>
+    <div class="card"><div style="font-weight:700;margin-bottom:10px;">הוצאות לפי קטגוריה</div>
+      <div class="chart-wrap">${renderDonutChart(txData.byCategory)}</div></div>
     <div class="card">
       <div style="font-weight:700;margin-bottom:10px;">הוספת תנועה ידנית</div>
       <div class="row">
@@ -490,6 +510,40 @@ function renderTrendChart(trend) {
   </svg>
   <div class="row" style="margin-top:6px;"><span class="muted">🟩 הכנסות</span><span class="muted">🟥 הוצאות</span></div>`;
 }
+
+// גרף עיגול (donut) - הוצאות לפי קטגוריה. בלי ספריית גרפים, בדיוק כמו ב"הפנקס שלי" - מגביל ל-6
+// קטגוריות + "אחר" מקופל, כדי שהגרף יישאר קריא גם עם הרבה קטגוריות שונות.
+const DONUT_COLORS = ["#2fb08d", "#e8a33d", "#d9614f", "#5b8def", "#b06fd6", "#4fb8c4", "#8c94a6"];
+function renderDonutChart(byCategory) {
+  const entries = Object.entries(byCategory || {}).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) return "<div class='muted'>אין עדיין הוצאות לגרף</div>";
+  let shown = entries.slice(0, 6);
+  const rest = entries.slice(6);
+  if (rest.length) {
+    const restTotal = rest.reduce((s, [, v]) => s + v, 0);
+    shown.push(["אחר", restTotal]);
+  }
+  const total = shown.reduce((s, [, v]) => s + v, 0) || 1;
+  const size = 200, r = 70, cx = size / 2, cy = size / 2, circumference = 2 * Math.PI * r;
+  let offset = 0;
+  const segments = shown.map(([cat, val], i) => {
+    const frac = val / total;
+    const dash = frac * circumference;
+    const seg = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${DONUT_COLORS[i % DONUT_COLORS.length]}"
+      stroke-width="28" stroke-dasharray="${dash} ${circumference - dash}" stroke-dashoffset="${-offset}"
+      transform="rotate(-90 ${cx} ${cy})"></circle>`;
+    offset += dash;
+    return seg;
+  }).join("");
+  const legend = shown.map(([cat, val], i) => `<div class="row" style="gap:6px;margin-bottom:4px;">
+    <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${DONUT_COLORS[i % DONUT_COLORS.length]};"></span>
+    <span class="muted">${esc(cat)} — ₪${trunc(val)}</span></div>`).join("");
+  return `<div class="row" style="align-items:center;gap:20px;flex-wrap:wrap;">
+    <svg width="${size}" height="${size}">${segments}</svg>
+    <div>${legend}</div>
+  </div>`;
+}
+
 let LAST_PARSED_ROWS = [];
 async function parseImportFile() {
   const fileInput = document.getElementById("importFile");
