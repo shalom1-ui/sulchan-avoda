@@ -5,11 +5,36 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { Router, json, html } = require("./router");
+const debugLog = require("./debugLog");
+
+// עוטפים את console.log/console.error כדי לתפוס אוטומטית שורות אבחון רלוונטיות (מייל, ימות, שגיאות
+// ראוטר) לתוך debugLog - כדי שאפשר יהיה לשלוף אותן דרך /api/debug/recent-logs בלי לחפש ב-Logs של
+// Render ידנית. לא משנה את ההתנהגות הרגילה (עדיין מודפס כרגיל ל-Logs). אותו דפוס כמו "הפנקס שלי".
+const DEBUG_PATTERN = /מייל|\[YEMOT\]|\[ROUTER\]|שגיאה|נכשל/;
+const originalConsoleLog = console.log;
+console.log = (...args) => {
+  const line = args.map(String).join(" ");
+  if (DEBUG_PATTERN.test(line)) debugLog.push(line);
+  originalConsoleLog(...args);
+};
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  const line = args.map(String).join(" ");
+  debugLog.push(`[ERROR] ${line}`);
+  originalConsoleError(...args);
+};
 
 const router = new Router();
 
 router.get("/api/health", async (ctx) => {
   return json(ctx.res, 200, { status: "ok", service: "שולחן עבודה - ניהול", time: new Date().toISOString() });
+});
+
+// כלי אבחון זמני: שליפת שורות הלוג האחרונות (מייל/ימות/שגיאות) בלי לדפדף ב-Render Logs. מוגן
+// במילת-מעבר קבועה בכתובת (לא הרשאה אמיתית - זה כלי זמני לפיתוח, לא לחשוף בפרודקשן לטווח ארוך).
+router.get("/api/debug/recent-logs", async (ctx) => {
+  if (ctx.query.key !== "sulchan-diag-7429") return json(ctx.res, 403, { error: "לא מורשה" });
+  return json(ctx.res, 200, { lines: debugLog.getAll() });
 });
 
 const APP_HTML_PATH = path.join(__dirname, "..", "public", "app.html");
