@@ -49,7 +49,21 @@ router.post("/api/debug/reset-user-pin", async (ctx) => {
   const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
   if (!user) return json(ctx.res, 404, { error: "משתמש לא נמצא" });
   db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(String(newPin)), user.id);
-  return json(ctx.res, 200, { ok: true, fullName: user.full_name });
+  const after = db.prepare("SELECT * FROM users WHERE id = ?").get(user.id);
+  const { verifyPassword } = require("./utils/crypto");
+  return json(ctx.res, 200, {
+    ok: true, fullName: user.full_name, userId: user.id, active: after.active,
+    hashPrefixAfterUpdate: after.password_hash.slice(0, 20),
+    verifiesRightAfterUpdate: verifyPassword(String(newPin), after.password_hash),
+  });
+});
+
+// אבחון זמני: כמה שורות users יש בכלל, ופרטים בסיסיים (בלי סיסמאות) - לבדוק אם יש שכפולים מוזרים.
+router.get("/api/debug/list-users", async (ctx) => {
+  if (ctx.query.key !== "sulchan-diag-7429") return json(ctx.res, 403, { error: "לא מורשה" });
+  const db = require("./db");
+  const rows = db.prepare("SELECT id, username, full_name, role, active, length(password_hash) AS hash_len FROM users").all();
+  return json(ctx.res, 200, { users: rows, dbPath: process.env.DB_PATH || "default" });
 });
 
 const APP_HTML_PATH = path.join(__dirname, "..", "public", "app.html");
