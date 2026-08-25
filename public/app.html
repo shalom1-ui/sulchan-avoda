@@ -329,11 +329,27 @@ async function renderInstructions() {
   main.innerHTML = `
     <div class="card">
       <div style="font-weight:700;margin-bottom:10px;">שליחת הוראה חדשה</div>
-      <div class="row" style="margin-bottom:8px;">
-        <select id="instrBranch" style="flex:1;">${BRANCHES.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join("")}</select>
-        <select id="instrWorker" style="flex:1;">${workers.map(w => `<option value="${w.id}">${esc(w.full_name)}</option>`).join("") || "<option disabled>אין עובדים - הוסיפו בטאב משתמשים</option>"}</select>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:10px;">
+        <div>
+          <div class="row" style="justify-content:space-between;margin-bottom:6px;">
+            <span class="muted" style="font-size:12.5px;">סניפים</span>
+            <button class="secondary" style="padding:3px 10px;font-size:11.5px;" onclick="toggleAllCheckboxes('instrBranchList')">בחר הכל</button>
+          </div>
+          <div id="instrBranchList" style="max-height:180px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:8px;">
+            ${BRANCHES.map(b => `<label class="row" style="margin-bottom:4px;"><input type="checkbox" style="width:auto;" value="${b.id}"> ${esc(b.name)}</label>`).join("")}
+          </div>
+        </div>
+        <div>
+          <div class="row" style="justify-content:space-between;margin-bottom:6px;">
+            <span class="muted" style="font-size:12.5px;">עובדים</span>
+            <button class="secondary" style="padding:3px 10px;font-size:11.5px;" onclick="toggleAllCheckboxes('instrWorkerList')">בחר הכל (כולם)</button>
+          </div>
+          <div id="instrWorkerList" style="max-height:180px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:8px;">
+            ${workers.map(w => `<label class="row" style="margin-bottom:4px;"><input type="checkbox" style="width:auto;" value="${w.id}"> ${esc(w.full_name)}</label>`).join("") || "<span class='muted'>אין עובדים - הוסיפו בטאב משתמשים</span>"}
+          </div>
+        </div>
       </div>
-      <textarea id="instrText" placeholder="תוכן ההוראה..." rows="3"></textarea>
+      <textarea id="instrText" placeholder="תוכן ההוראה... (אותה הוראה תישלח לכל הצירופים שבחרתם)" rows="3"></textarea>
       <div class="row" style="margin-top:8px;"><button onclick="sendInstruction()" ${workers.length ? "" : "disabled"}>שליחה</button></div>
       <div id="instrStatus" class="status-line"></div>
     </div>
@@ -343,15 +359,21 @@ async function renderInstructions() {
       <td>${i.email_sent ? "✔" : "-"}</td><td class="muted">${fmtDate(i.created_at)}</td></tr>`).join("") || "<tr><td colspan='6' class='muted'>אין הוראות עדיין</td></tr>"}
     </tbody></table></div>`;
 }
+function toggleAllCheckboxes(containerId) {
+  const boxes = document.querySelectorAll(`#${containerId} input[type=checkbox]`);
+  const allAlreadyChecked = Array.from(boxes).every(b => b.checked);
+  boxes.forEach(b => { b.checked = !allAlreadyChecked; });
+}
 async function sendInstruction() {
-  const branchId = document.getElementById("instrBranch").value;
-  const workerUserId = document.getElementById("instrWorker").value;
+  const branchIds = Array.from(document.querySelectorAll("#instrBranchList input:checked")).map(b => Number(b.value));
+  const workerUserIds = Array.from(document.querySelectorAll("#instrWorkerList input:checked")).map(b => Number(b.value));
   const text = document.getElementById("instrText").value.trim();
   const statusEl = document.getElementById("instrStatus");
+  if (!branchIds.length || !workerUserIds.length) { statusEl.textContent = "בחרו לפחות סניף אחד ועובד אחד"; statusEl.className = "status-line err"; return; }
   if (!text) { statusEl.textContent = "נא להזין תוכן הוראה"; statusEl.className = "status-line err"; return; }
   try {
-    const res = await api("/api/instructions", { method: "POST", body: { branchId: Number(branchId), workerUserId: Number(workerUserId), text } });
-    statusEl.textContent = res.emailSent ? "נשלח במייל בהצלחה." : "נשמר (לעובד אין כתובת מייל - יישמע רק בטלפון)."; statusEl.className = "status-line ok";
+    const res = await api("/api/instructions", { method: "POST", body: { branchIds, workerUserIds, text } });
+    statusEl.textContent = `נוצרו ${res.created} הוראות (${res.emailsSent} נשלחו במייל בהצלחה).`; statusEl.className = "status-line ok";
     renderInstructions();
   } catch (e) { statusEl.textContent = e.message; statusEl.className = "status-line err"; }
 }

@@ -111,6 +111,20 @@ async function main() {
   const forbidden = await call("/api/transactions", { token: workerToken });
   ok(forbidden.status === 403, "עובד לא יכול לראות נתונים כספיים");
 
+  // --- הוראה ל"כולם"/"כל הסניפים": יוצרים עובד שני, ובודקים שהוראה עם branchIds+workerUserIds
+  //     יוצרת הוראה נפרדת לכל צירוף (עובד × סניף) ---
+  const worker2 = await call("/api/users", { method: "POST", token: adminToken, body: {
+    fullName: "עובד שני", username: "worker2", pin: "5678", role: "worker",
+  }});
+  ok(worker2.status === 201, "נוצר עובד שני לבדיקת שידור לכולם");
+  // בכוונה לא כוללים כאן את workerId המקורי - יש לו כבר בדיקות pending-instructions ייעודיות
+  // בהמשך (זרימת הטלפון למטה), ולא רוצים ליצור לו כאן עוד הוראות pending שיפריעו לזה.
+  const secondBranchId = branches.data.branches[1].id;
+  const broadcast = await call("/api/instructions", { method: "POST", token: adminToken, body: {
+    branchIds: [branchId, secondBranchId], workerUserIds: [worker2.data.id], text: "בדיקת שיבוץ לכולם",
+  }});
+  ok(broadcast.status === 201 && broadcast.data.created === 2, "הוראה ל-1 עובד × 2 סניפים יוצרת 2 הוראות בבת אחת");
+
   // --- עדכון קטגוריה (טקסט חופשי) לתנועה קיימת ---
   const txId = tx.data.transaction.id;
   const editCat = await call(`/api/transactions/${txId}`, { method: "PUT", token: adminToken, body: { category: "קטגוריה חדשה" } });
