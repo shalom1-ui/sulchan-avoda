@@ -57,6 +57,9 @@
   .status-line.err{color:var(--danger);}
   .status-line.ok{color:var(--accent);}
   .chart-wrap{overflow-x:auto;}
+  .pin-wrap{position:relative;}
+  .pin-wrap input{padding-inline-end:38px;}
+  .pin-eye{position:absolute;top:50%;transform:translateY(-50%);inset-inline-end:10px;cursor:pointer;font-size:16px;user-select:none;background:transparent;border:none;padding:2px;color:var(--muted);}
 </style>
 
 <div id="loginScreen">
@@ -66,7 +69,7 @@
     <div id="loginFormArea">
       <div class="row" style="flex-direction:column;align-items:stretch;gap:12px;">
         <input id="loginUsername" placeholder="שם משתמש" autocomplete="username">
-        <input id="loginPin" placeholder="קוד (4 ספרות)" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password">
+        <div class="pin-wrap"><input id="loginPin" placeholder="קוד (4 ספרות)" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password"><span class="pin-eye" onclick="togglePinVisibility('loginPin', this)">👁</span></div>
         <button id="loginBtn" onclick="doLogin()">כניסה</button>
         <div id="loginStatus" class="status-line"></div>
         <button class="secondary" onclick="showRegisterForm()">אין לי חשבון - הרשמה</button>
@@ -107,6 +110,13 @@ async function api(path, opts = {}) {
   return data;
 }
 
+function togglePinVisibility(inputId, eyeEl) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const showing = input.type === "text";
+  input.type = showing ? "password" : "text";
+  eyeEl.textContent = showing ? "👁" : "🙈";
+}
 async function doLogin() {
   const username = document.getElementById("loginUsername").value.trim();
   const pin = document.getElementById("loginPin").value.trim();
@@ -136,7 +146,7 @@ function showRegisterForm() {
       <input id="regEmail" placeholder="מייל (חייב להיות מאושר מראש)" type="email">
       <input id="regFullName" placeholder="שם מלא">
       <input id="regUsername" placeholder="שם משתמש">
-      <input id="regPin" placeholder="קוד חדש (4 ספרות)" type="password" inputmode="numeric" maxlength="4">
+      <div class="pin-wrap"><input id="regPin" placeholder="קוד חדש (4 ספרות)" type="password" inputmode="numeric" maxlength="4"><span class="pin-eye" onclick="togglePinVisibility('regPin', this)">👁</span></div>
       <input id="regPhone" placeholder="טלפון (רשות)">
       <button onclick="doRegister()">הרשמה</button>
       <div id="registerStatus" class="status-line"></div>
@@ -148,7 +158,7 @@ function showLoginForm() {
   document.getElementById("loginFormArea").innerHTML = `
     <div class="row" style="flex-direction:column;align-items:stretch;gap:12px;">
       <input id="loginUsername" placeholder="שם משתמש" autocomplete="username">
-      <input id="loginPin" placeholder="קוד (4 ספרות)" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password">
+      <div class="pin-wrap"><input id="loginPin" placeholder="קוד (4 ספרות)" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password"><span class="pin-eye" onclick="togglePinVisibility('loginPin', this)">👁</span></div>
       <button id="loginBtn" onclick="doLogin()">כניסה</button>
       <div id="loginStatus" class="status-line"></div>
       <button class="secondary" onclick="showRegisterForm()">אין לי חשבון - הרשמה</button>
@@ -164,7 +174,7 @@ function showForgotForm() {
       <div id="forgotStatus" class="status-line"></div>
       <div id="forgotStep2" style="display:none;">
         <input id="forgotCode" placeholder="קוד מהמייל (4 ספרות)" maxlength="4" style="margin-bottom:10px;">
-        <input id="forgotNewPin" placeholder="קוד חדש (4 ספרות)" type="password" inputmode="numeric" maxlength="4" style="margin-bottom:10px;">
+        <div class="pin-wrap" style="margin-bottom:10px;"><input id="forgotNewPin" placeholder="קוד חדש (4 ספרות)" type="password" inputmode="numeric" maxlength="4"><span class="pin-eye" onclick="togglePinVisibility('forgotNewPin', this)">👁</span></div>
         <button onclick="confirmResetCode()">איפוס הקוד</button>
       </div>
       <button class="secondary" onclick="showLoginForm()">חזרה לכניסה</button>
@@ -530,7 +540,8 @@ async function renderUsers() {
     <tbody>${data.users.filter(u => u.active).map(u => `<tr><td>${esc(u.full_name)}
         <button class="secondary" style="padding:2px 8px;font-size:11.5px;margin-inline-start:6px;" onclick="editUserName(${u.id}, '${esc(u.full_name).replace(/'/g,"\\'")}')">✎</button></td>
       <td class="muted">${esc(u.username)}</td>
-      <td>${u.role === "admin" ? "מנהל" : "עובד"}</td><td>${esc(u.phone||"-")}</td><td>${esc(u.email||"-")}</td>
+      <td>${u.role === "admin" ? "מנהל" : "עובד"}</td><td>${esc(u.phone||"-")}</td>
+      <td>${esc(u.email||"-")} <button class="secondary" style="padding:2px 8px;font-size:11.5px;" onclick="editUserEmail(${u.id}, '${esc(u.email||"").replace(/'/g,"\\'")}')">✎</button></td>
       <td>${u.role === "worker" ? `<button class="secondary" onclick="openWorkerBranches(${u.id}, '${esc(u.full_name).replace(/'/g,"\\'")}')">שיוך סניפים</button>` : "-"}</td>
       <td><button class="danger" onclick="deleteUser(${u.id}, '${esc(u.full_name).replace(/'/g,"\\'")}')">מחיקה</button></td>
     </tr>`).join("")}</tbody></table></div>`;
@@ -554,6 +565,12 @@ async function editUserName(id, currentName) {
   const newName = prompt("שם מלא חדש:", currentName);
   if (newName === null || !newName.trim()) return;
   await api(`/api/users/${id}`, { method: "PUT", body: { fullName: newName.trim() } });
+  renderUsers();
+}
+async function editUserEmail(id, currentEmail) {
+  const newEmail = prompt("מייל חדש (חשוב במיוחד עבור 'שכחתי סיסמה'):", currentEmail);
+  if (newEmail === null) return;
+  await api(`/api/users/${id}`, { method: "PUT", body: { email: newEmail.trim() } });
   renderUsers();
 }
 async function deleteUser(id, fullName) {
