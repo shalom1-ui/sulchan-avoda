@@ -542,8 +542,11 @@ async function renderUsers() {
       <td class="muted">${esc(u.username)}</td>
       <td>${u.role === "admin" ? "מנהל" : "עובד"}</td><td>${esc(u.phone||"-")}</td>
       <td>${esc(u.email||"-")} <button class="secondary" style="padding:2px 8px;font-size:11.5px;" onclick="editUserEmail(${u.id}, '${esc(u.email||"").replace(/'/g,"\\'")}')">✎</button></td>
-      <td>${u.role === "worker" ? `<button class="secondary" onclick="openWorkerBranches(${u.id}, '${esc(u.full_name).replace(/'/g,"\\'")}')">שיוך סניפים</button>` : "-"}</td>
-      <td><button class="danger" onclick="deleteUser(${u.id}, '${esc(u.full_name).replace(/'/g,"\\'")}')">מחיקה</button></td>
+      <td><button class="secondary" onclick="openWorkerBranches(${u.id}, '${esc(u.full_name).replace(/'/g,"\\'")}')">שיוך סניפים</button></td>
+      <td class="row" style="gap:6px;flex-wrap:nowrap;">
+        <button class="secondary" onclick="editUserPin(${u.id})">שינוי קוד</button>
+        <button class="danger" onclick="deleteUser(${u.id}, '${esc(u.full_name).replace(/'/g,"\\'")}')">מחיקה</button>
+      </td>
     </tr>`).join("")}</tbody></table></div>`;
 }
 async function addInvite() {
@@ -571,6 +574,14 @@ async function editUserEmail(id, currentEmail) {
   const newEmail = prompt("מייל חדש (חשוב במיוחד עבור 'שכחתי סיסמה'):", currentEmail);
   if (newEmail === null) return;
   await api(`/api/users/${id}`, { method: "PUT", body: { email: newEmail.trim() } });
+  renderUsers();
+}
+async function editUserPin(id) {
+  const newPin = prompt("קוד חדש (4 ספרות בדיוק):");
+  if (newPin === null) return;
+  if (!/^\d{4}$/.test(newPin.trim())) { alert("הקוד חייב להיות בדיוק 4 ספרות"); return; }
+  await api(`/api/users/${id}`, { method: "PUT", body: { pin: newPin.trim() } });
+  alert("הקוד עודכן בהצלחה");
   renderUsers();
 }
 async function deleteUser(id, fullName) {
