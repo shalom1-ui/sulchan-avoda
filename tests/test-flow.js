@@ -95,6 +95,29 @@ async function main() {
   const forbidden = await call("/api/transactions", { token: workerToken });
   ok(forbidden.status === 403, "עובד לא יכול לראות נתונים כספיים");
 
+  // --- עדכון קטגוריה (טקסט חופשי) לתנועה קיימת ---
+  const txId = tx.data.transaction.id;
+  const editCat = await call(`/api/transactions/${txId}`, { method: "PUT", token: adminToken, body: { category: "קטגוריה חדשה" } });
+  ok(editCat.status === 200 && editCat.data.transaction.category === "קטגוריה חדשה", "עריכת קטגוריה של תנועה קיימת עובדת");
+
+  // --- ייבוא עם שמירת קובץ מקור + payment_method, וסינון "רק כרטיס אשראי" ---
+  const fakeCsv = Buffer.from("date,description,amount,type\n2026-01-01,קפה,50,expense\n").toString("base64");
+  const commitWithFile = await call("/api/transactions/import/commit", { method: "POST", token: adminToken, body: {
+    transactions: [{ date: "2026-01-02", type: "expense", amount: 75, description: "בדיקה" }],
+    data_base64: fakeCsv, filename: "test-statement.csv", mime_type: "text/csv", source_type: "card",
+  }});
+  ok(commitWithFile.status === 201 && commitWithFile.data.documentId, "ייבוא עם קובץ שומר מסמך חדש");
+
+  const docsList = await call("/api/documents", { token: adminToken });
+  ok(docsList.status === 200 && docsList.data.documents.some(d => d.filename === "test-statement.csv"), "המסמך שנשמר מופיע ברשימת המסמכים");
+
+  const docDownload = await call(`/api/documents/${commitWithFile.data.documentId}/download`, { token: adminToken });
+  ok(docDownload.status === 200, "ניתן להוריד את המסמך שנשמר");
+
+  const txAfterImport = await call("/api/transactions", { token: adminToken });
+  const importedTx = txAfterImport.data.transactions.find(t => t.note === "בדיקה");
+  ok(importedTx && importedTx.payment_method === "card", "תנועה מיובאת מקבלת payment_method='card' נכון");
+
   // --- שלוחת ימות: PIN של העובד מזהה אותו (עדיין בלי טלפון רשום לאף עובד - הבדיקה לא נאכפת) ---
   async function callRaw(path, body) {
     const res = await fetch(base + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });

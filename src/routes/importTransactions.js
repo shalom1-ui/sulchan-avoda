@@ -90,9 +90,25 @@ function register(router) {
       return json(ctx.res, 400, { error: `יותר מדי תנועות בבקשה אחת (הגבלה של ${MAX_ROWS_PER_IMPORT})` });
     }
     const branchId = ctx.body.branchId || null;
+    const paymentMethod = ctx.body.source_type === "card" ? "card" : ctx.body.source_type === "bank" ? "bank" : null;
+
+    // שומרים את הקובץ המקורי (אם נשלח) כדי שאפשר יהיה לפתוח/להוריד אותו שוב בהמשך מטאב "כספים" -
+    // ר' routes/documents.js. אופציונלי בכוונה (data_base64 עשוי לא להישלח בקריאות ישנות/בדיקות).
+    let documentId = null;
+    if (ctx.body.data_base64 && ctx.body.filename) {
+      try {
+        const buffer = decodeBase64File(ctx.body.data_base64);
+        const info = db.prepare(
+          "INSERT INTO documents (filename, mime_type, size_bytes, data, uploaded_by) VALUES (?, ?, ?, ?, ?)"
+        ).run(String(ctx.body.filename).slice(0, 255), ctx.body.mime_type || null, buffer.length, buffer, ctx.user.userId);
+        documentId = Number(info.lastInsertRowid);
+      } catch (e) {
+        console.error("שמירת קובץ המקור נכשלה (לא קריטי, הייבוא ממשיך בלעדיו):", e.message);
+      }
+    }
 
     const insert = db.prepare(
-      "INSERT INTO transactions (branch_id, type, amount, category, note, source, import_hash, occurred_at, created_by) VALUES (?, ?, ?, ?, ?, 'import', ?, ?, ?)"
+      "INSERT INTO transactions (branch_id, type, amount, category, note, source, import_hash, payment_method, document_id, occurred_at, created_by) VALUES (?, ?, ?, ?, ?, 'import', ?, ?, ?, ?, ?)"
     );
     let imported = 0, skippedDuplicates = 0, skippedInvalid = 0;
 
@@ -111,7 +127,7 @@ function register(router) {
       if (exists) { skippedDuplicates++; continue; }
 
       try {
-        insert.run(branchId, type, t.amount, category, description || null, hash, `${date} 12:00:00`, ctx.user.userId);
+        insert.run(branchId, type, t.amount, category, description || null, hash, paymentMethod, documentId, `${date} 12:00:00`, ctx.user.userId);
         imported++;
       } catch (e) {
         if (/UNIQUE constraint failed/i.test(e.message)) skippedDuplicates++;
@@ -119,7 +135,7 @@ function register(router) {
       }
     }
 
-    return json(ctx.res, 201, { imported, skippedDuplicates, skippedInvalid });
+    return json(ctx.res, 201, { imported, skippedDuplicates, skippedInvalid, documentId });
   }));
 }
 

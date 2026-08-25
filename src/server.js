@@ -42,6 +42,7 @@ require("./routes/chat").register(router);
 require("./routes/notifications").register(router);
 require("./routes/transactions").register(router);
 require("./routes/importTransactions").register(router);
+require("./routes/documents").register(router);
 require("./routes/yemot").register(router);
 
 const PORT = process.env.PORT || 3000;

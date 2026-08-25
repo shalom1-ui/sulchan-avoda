@@ -18,14 +18,17 @@ function register(router) {
   router.get("/api/reports", requireAuth(async (ctx) => {
     if (ctx.user.role === "admin") {
       const rows = db.prepare(
-        `SELECT r.*, b.name AS branch_name, u.full_name AS worker_name
+        `SELECT r.*, b.name AS branch_name, u.full_name AS worker_name, i.text AS instruction_text
          FROM reports r JOIN branches b ON b.id = r.branch_id JOIN users u ON u.id = r.worker_user_id
+         LEFT JOIN instructions i ON i.id = r.instruction_id
          ORDER BY r.created_at DESC LIMIT 300`
       ).all();
       return json(ctx.res, 200, { reports: rows });
     }
     const rows = db.prepare(
-      `SELECT r.*, b.name AS branch_name FROM reports r JOIN branches b ON b.id = r.branch_id
+      `SELECT r.*, b.name AS branch_name, i.text AS instruction_text
+       FROM reports r JOIN branches b ON b.id = r.branch_id
+       LEFT JOIN instructions i ON i.id = r.instruction_id
        WHERE r.worker_user_id = ? ORDER BY r.created_at DESC LIMIT 100`
     ).all(ctx.user.userId);
     return json(ctx.res, 200, { reports: rows });

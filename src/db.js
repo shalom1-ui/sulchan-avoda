@@ -108,8 +108,22 @@ db.exec(`
     note TEXT,
     source TEXT NOT NULL DEFAULT 'web',-- web | import
     import_hash TEXT,                  -- זיהוי כפילויות מייבוא (ר' routes/importTransactions.js)
+    payment_method TEXT,               -- 'bank' | 'card' | NULL (לא ידוע/הוזן ידנית) - לסינון "רק כרטיס אשראי" וכו'
+    document_id INTEGER REFERENCES documents(id), -- הקובץ המקורי שממנו יובאה התנועה (ר' טבלת documents), NULL אם הוזנה ידנית
     occurred_at TEXT DEFAULT (datetime('now')),
     created_by INTEGER REFERENCES users(id)
+  );
+
+  -- קבצים שהועלו לייבוא (דפי בנק/אשראי) - נשמרים כדי שאפשר יהיה לפתוח/להוריד אותם שוב בהמשך מתוך
+  -- טאב "כספים", בלי לצטרך לחפש אותם שוב במחשב. size_bytes רק לתצוגה, לא נאכף כהגבלה כאן.
+  CREATE TABLE IF NOT EXISTS documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT NOT NULL,
+    mime_type TEXT,
+    size_bytes INTEGER,
+    data BLOB NOT NULL,
+    uploaded_by INTEGER REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now'))
   );
 
   -- מצב שיחה פעילה בשלוחת הטלפון (ימות המשיח) - מכונת מצבים פשוטה, לפי ApiCallId (call_sid).
@@ -137,6 +151,21 @@ try {
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_import_hash ON transactions(import_hash) WHERE import_hash IS NOT NULL");
 } catch (e) {
   console.error("שגיאה ביצירת אינדקס import_hash (לא קריטי):", e.message);
+}
+
+// מיגרציה: הוספת עמודות חדשות לטבלת transactions שכבר קיימת (CREATE TABLE IF NOT EXISTS למעלה לא
+// מוסיף עמודות למסד נתונים קיים - רלוונטי לסביבת הפיתוח המקומית ולסביבת הייצור שכבר יש בהן נתונים).
+// ALTER TABLE ADD COLUMN לא תומך ב"IF NOT EXISTS" ב-SQLite - עוטפים ב-try/catch ומתעלמים משגיאת
+// "duplicate column" (כלומר העמודה כבר קיימת מריצה קודמת).
+for (const alterSql of [
+  "ALTER TABLE transactions ADD COLUMN payment_method TEXT",
+  "ALTER TABLE transactions ADD COLUMN document_id INTEGER REFERENCES documents(id)",
+]) {
+  try {
+    db.exec(alterSql);
+  } catch (e) {
+    if (!/duplicate column/i.test(e.message)) console.error(`שגיאת מיגרציה (${alterSql}):`, e.message);
+  }
 }
 
 // זריעת נתוני התחלה: 13 הסניפים מהפלייר של "שולחן עבודה" (אושרו ע"י המשתמש), רק אם הטבלה ריקה -

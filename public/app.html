@@ -197,10 +197,11 @@ async function renderDashboard() {
     </div>
     <div class="card">
       <div style="font-weight:700;margin-bottom:10px;">דיווחים אחרונים</div>
-      <table><thead><tr><th>סניף</th><th>עובד</th><th>סטטוס</th><th>הערה</th><th>מתי</th></tr></thead>
+      <table><thead><tr><th>סניף</th><th>עובד</th><th>הוראה</th><th>סטטוס</th><th>הערה</th><th>מתי</th></tr></thead>
       <tbody>${reports.map(r => `<tr><td>${esc(r.branch_name)}</td><td>${esc(r.worker_name)}</td>
+        <td class="muted">${esc(r.instruction_text || "-")}</td>
         <td><span class="badge ${r.status_code}">${statusLabel(r.status_code)}</span></td>
-        <td>${esc(r.note_text || "-")}</td><td class="muted">${fmtDate(r.created_at)}</td></tr>`).join("") || "<tr><td colspan='5' class='muted'>אין דיווחים עדיין</td></tr>"}
+        <td>${esc(r.note_text || "-")}</td><td class="muted">${fmtDate(r.created_at)}</td></tr>`).join("") || "<tr><td colspan='6' class='muted'>אין דיווחים עדיין</td></tr>"}
       </tbody></table>
     </div>`;
 }
@@ -319,11 +320,12 @@ async function sendInstruction() {
 async function renderReports() {
   const main = document.getElementById("mainArea");
   const data = await api("/api/reports");
-  main.innerHTML = `<div class="card"><table><thead><tr><th>סניף</th><th>עובד</th><th>סטטוס</th><th>הערה</th><th>מקור</th><th>מתי</th></tr></thead>
+  main.innerHTML = `<div class="card"><table><thead><tr><th>סניף</th><th>עובד</th><th>הוראה</th><th>סטטוס</th><th>הערה</th><th>מקור</th><th>מתי</th></tr></thead>
     <tbody>${data.reports.map(r => `<tr><td>${esc(r.branch_name)}</td><td>${esc(r.worker_name)}</td>
+      <td class="muted">${esc(r.instruction_text || "-")}</td>
       <td><span class="badge ${r.status_code}">${statusLabel(r.status_code)}</span></td>
       <td>${esc(r.note_text || "-")}</td><td class="muted">${r.source === "phone" ? "טלפון" : "אתר"}</td>
-      <td class="muted">${fmtDate(r.created_at)}</td></tr>`).join("") || "<tr><td colspan='6' class='muted'>אין דיווחים עדיין</td></tr>"}
+      <td class="muted">${fmtDate(r.created_at)}</td></tr>`).join("") || "<tr><td colspan='7' class='muted'>אין דיווחים עדיין</td></tr>"}
     </tbody></table></div>`;
 }
 
@@ -446,9 +448,12 @@ async function sendChat(branchId, workerId) {
 }
 
 // ---------- כספים (מנהל) ----------
+let LAST_TX_DATA = null;
+let financePaymentFilter = "all";
 async function renderFinance() {
   const main = document.getElementById("mainArea");
-  const [txData, trendData] = await Promise.all([api("/api/transactions"), api("/api/transactions/trend")]);
+  const [txData, trendData, docsData] = await Promise.all([api("/api/transactions"), api("/api/transactions/trend"), api("/api/documents")]);
+  LAST_TX_DATA = txData;
   main.innerHTML = `
     <div class="grid3" style="margin-bottom:16px;">
       <div class="stat"><div class="n">₪${trunc(txData.summary.income)}</div><div class="l">הכנסות</div></div>
@@ -477,13 +482,49 @@ async function renderFinance() {
       <div id="importStatus" class="status-line"></div>
       <div id="importPreview"></div>
     </div>
-    <div class="card"><table><thead><tr><th>תאריך</th><th>סוג</th><th>סכום</th><th>קטגוריה</th><th>סניף</th><th></th></tr></thead>
-    <tbody>${txData.transactions.slice(0,50).map(t => `<tr><td class="muted">${fmtDate(t.occurred_at)}</td>
-      <td>${t.type === "income" ? "הכנסה" : "הוצאה"}</td><td>₪${t.amount}</td>
-      <td><span class="row" style="gap:6px;">${esc(t.category||"-")}
-        <button class="secondary" style="padding:2px 8px;font-size:11.5px;" onclick="editTransactionCategory(${t.id}, '${esc(t.category||"").replace(/'/g,"\\'")}')">✎</button></span></td>
-      <td>${esc(t.branch_name||"-")}</td><td><button class="danger" onclick="deleteTransaction(${t.id})">מחיקה</button></td></tr>`).join("") || "<tr><td colspan='6' class='muted'>אין תנועות עדיין</td></tr>"}
-    </tbody></table></div>`;
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:10px;">קבצים שהועלו</div>
+      ${docsData.documents.length ? `<table><thead><tr><th>קובץ</th><th>גודל</th><th>הועלה</th><th></th></tr></thead>
+      <tbody>${docsData.documents.map(d => `<tr><td>${esc(d.filename)}</td><td class="muted">${Math.round((d.size_bytes||0)/1024)} KB</td>
+        <td class="muted">${fmtDate(d.created_at)}</td><td><button class="secondary" onclick="downloadDocument(${d.id}, '${esc(d.filename).replace(/'/g,"\\'")}')">הורדה</button></td></tr>`).join("")}
+      </tbody></table>` : "<div class='muted'>עדיין לא הועלו קבצים</div>"}
+    </div>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:10px;">
+        <div style="font-weight:700;">תנועות</div>
+        <select id="paymentMethodFilter" style="width:160px;" onchange="financePaymentFilter=this.value;renderFinanceTable();">
+          <option value="all">כל התנועות</option>
+          <option value="card">רק כרטיס אשראי</option>
+          <option value="bank">רק בנק</option>
+        </select>
+      </div>
+      <table><thead><tr><th>תאריך</th><th>סוג</th><th>סכום</th><th>קטגוריה</th><th>סניף</th><th>אמצעי</th><th></th></tr></thead>
+      <tbody id="financeTableBody"></tbody></table>
+    </div>`;
+  renderFinanceTable();
+}
+function renderFinanceTable() {
+  const tbody = document.getElementById("financeTableBody");
+  if (!tbody || !LAST_TX_DATA) return;
+  const rows = LAST_TX_DATA.transactions.filter(t => financePaymentFilter === "all" || t.payment_method === financePaymentFilter).slice(0, 50);
+  const paymentLabel = { card: "כרטיס אשראי", bank: "בנק" };
+  tbody.innerHTML = rows.map(t => `<tr><td class="muted">${fmtDate(t.occurred_at)}</td>
+    <td>${t.type === "income" ? "הכנסה" : "הוצאה"}</td><td>₪${t.amount}</td>
+    <td><span class="row" style="gap:6px;">${esc(t.category||"-")}
+      <button class="secondary" style="padding:2px 8px;font-size:11.5px;" onclick="editTransactionCategory(${t.id}, '${esc(t.category||"").replace(/'/g,"\\'")}')">✎</button></span></td>
+    <td>${esc(t.branch_name||"-")}</td><td class="muted">${paymentLabel[t.payment_method] || "-"}</td>
+    <td><button class="danger" onclick="deleteTransaction(${t.id})">מחיקה</button></td></tr>`).join("")
+    || "<tr><td colspan='7' class='muted'>אין תנועות תואמות</td></tr>";
+}
+async function downloadDocument(id, filename) {
+  const res = await fetch("/api/documents/" + id + "/download", { headers: { Authorization: "Bearer " + TOKEN } });
+  if (!res.ok) { alert("הורדת הקובץ נכשלה"); return; }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
 }
 function trunc(n) { return Math.round(n).toLocaleString("he-IL"); }
 async function addTransaction() {
@@ -561,6 +602,7 @@ function renderDonutChart(byCategory) {
 }
 
 let LAST_PARSED_ROWS = [];
+let LAST_PARSED_FILE = null; // { data_base64, filename, mime_type, source_type } - נשלח שוב ב-commit כדי לשמור את הקובץ המקורי (ר' downloadDocument)
 async function parseImportFile() {
   const fileInput = document.getElementById("importFile");
   const statusEl = document.getElementById("importStatus");
@@ -569,11 +611,13 @@ async function parseImportFile() {
   const reader = new FileReader();
   reader.onload = async (e) => {
     const base64 = btoa(new Uint8Array(e.target.result).reduce((s, b) => s + String.fromCharCode(b), ""));
+    const sourceType = document.getElementById("importSourceType").value;
     try {
       const data = await api("/api/transactions/import/parse", { method: "POST", body: {
-        data_base64: base64, filename: file.name, source_type: document.getElementById("importSourceType").value,
+        data_base64: base64, filename: file.name, source_type: sourceType,
       }});
       LAST_PARSED_ROWS = data.transactions;
+      LAST_PARSED_FILE = { data_base64: base64, filename: file.name, mime_type: file.type || null, source_type: sourceType };
       statusEl.textContent = `נמצאו ${data.transactions.length} תנועות. בדקו ולחצו "ייבוא בפועל".`; statusEl.className = "status-line ok";
       document.getElementById("importPreview").innerHTML = `
         <table style="margin-top:10px;"><thead><tr><th>תאריך</th><th>סוג</th><th>סכום</th><th>תיאור</th></tr></thead>
@@ -586,7 +630,9 @@ async function parseImportFile() {
 async function commitImport() {
   const statusEl = document.getElementById("importStatus");
   try {
-    const res = await api("/api/transactions/import/commit", { method: "POST", body: { transactions: LAST_PARSED_ROWS } });
+    const res = await api("/api/transactions/import/commit", { method: "POST", body: {
+      transactions: LAST_PARSED_ROWS, ...(LAST_PARSED_FILE || {}),
+    }});
     statusEl.textContent = `יובאו ${res.imported} תנועות (${res.skippedDuplicates} כפילויות דולגו).`; statusEl.className = "status-line ok";
     renderFinance();
   } catch (e) { statusEl.textContent = e.message; statusEl.className = "status-line err"; }
