@@ -53,6 +53,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS beneficiaries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     branch_id INTEGER NOT NULL REFERENCES branches(id),
+    category TEXT NOT NULL DEFAULT 'salary', -- 'salary' (מוטב קבוע) | 'electricity' (חשמל) | 'property_tax' (ארנונה)
     name TEXT NOT NULL,
     phone TEXT,
     payment_details TEXT,               -- הערות חופשיות (פרטי תשלום/בנק/הערה)
@@ -160,6 +161,7 @@ try {
 for (const alterSql of [
   "ALTER TABLE transactions ADD COLUMN payment_method TEXT",
   "ALTER TABLE transactions ADD COLUMN document_id INTEGER REFERENCES documents(id)",
+  "ALTER TABLE beneficiaries ADD COLUMN category TEXT NOT NULL DEFAULT 'salary'",
 ]) {
   try {
     db.exec(alterSql);

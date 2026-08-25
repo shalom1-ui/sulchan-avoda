@@ -85,7 +85,18 @@ async function main() {
   const ben = await call(`/api/branches/${branchId}/beneficiaries`, { method: "POST", token: adminToken, body: {
     name: "מוטב בדיקה", monthlyAmount: 500,
   }});
-  ok(ben.status === 201, "מוטב נוסף לסניף");
+  ok(ben.status === 201, "מוטב נוסף לסניף (קטגוריה ברירת מחדל: salary)");
+
+  const elec = await call(`/api/branches/${branchId}/beneficiaries`, { method: "POST", token: adminToken, body: {
+    name: "חברת חשמל", monthlyAmount: 300, category: "electricity",
+  }});
+  ok(elec.status === 201, "רשומת חשמל נוספה עם קטגוריה נפרדת");
+
+  const editAmount = await call(`/api/beneficiaries/${ben.data.id}`, { method: "PUT", token: adminToken, body: { monthlyAmount: 550 } });
+  ok(editAmount.status === 200, "עריכת סכום חודשי של מוטב עובדת");
+
+  const allBen = await call("/api/beneficiaries", { token: adminToken });
+  ok(allBen.status === 200 && allBen.data.beneficiaries.length === 2 && allBen.data.beneficiaries.every(b => b.branch_name), "רשימת מוטבים שטוחה (כל הסניפים) מחזירה גם שם סניף");
 
   const tx = await call("/api/transactions", { method: "POST", token: adminToken, body: { type: "income", amount: 1000, category: "תשלום סניף" } });
   ok(tx.status === 201, "תנועת הכנסה נוספה");

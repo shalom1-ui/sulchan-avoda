@@ -143,7 +143,7 @@ async function boot() {
 
 function buildNav() {
   const tabs = ME.role === "admin"
-    ? [["dashboard","לוח בקרה"],["branches","סניפים"],["instructions","הוראות"],["reports","דיווחים"],["chat","צ'אט"],["users","משתמשים"],["finance","כספים"],["minutesConverter","ממיר דקות"]]
+    ? [["dashboard","לוח בקרה"],["branches","סניפים"],["beneficiariesAll","מוטבים"],["instructions","הוראות"],["reports","דיווחים"],["chat","צ'אט"],["users","משתמשים"],["finance","כספים"],["minutesConverter","ממיר דקות"]]
     : [["myInstructions","ההוראות שלי"],["myReport","דיווח"],["chat","צ'אט"]];
   const nav = document.getElementById("navBar");
   nav.innerHTML = "";
@@ -167,6 +167,7 @@ function showTab(key) {
     dashboard: renderDashboard, branches: renderBranches, instructions: renderInstructions,
     reports: renderReports, chat: renderChatThreads, users: renderUsers, finance: renderFinance,
     myInstructions: renderMyInstructions, myReport: renderMyReport, minutesConverter: renderMinutesConverter,
+    beneficiariesAll: renderBeneficiariesAll,
   };
   (renderers[key] || (() => {}))();
 }
@@ -248,37 +249,76 @@ async function deleteBranch(id) {
   const data = await api("/api/branches"); BRANCHES = data.branches;
   renderBranches();
 }
+const BENEFICIARY_CATEGORIES = [
+  ["salary", "מוטבים קבועים (משכורת)", "שם המוטב"],
+  ["electricity", "חשמל", "שם/תיאור (למשל 'חברת חשמל')"],
+  ["property_tax", "ארנונה", "שם/תיאור (למשל 'עירייה')"],
+];
+function safeStr(s) { return esc(s).replace(/'/g, "\\'"); }
 async function openBeneficiaries(branchId, branchName) {
   const data = await api(`/api/branches/${branchId}/beneficiaries`);
   const main = document.getElementById("mainArea");
+  const bn = safeStr(branchName);
   main.innerHTML = `
     <button class="secondary" onclick="renderBranches()">→ חזרה לסניפים</button>
-    <div class="card" style="margin-top:14px;">
-      <div style="font-weight:700;margin-bottom:10px;">מוטבים למשכורת - ${esc(branchName)}</div>
-      <div class="row">
-        <input id="benName" placeholder="שם המוטב" style="flex:1;">
-        <input id="benPhone" placeholder="טלפון">
-        <input id="benAmount" placeholder="סכום חודשי" type="number">
-        <button onclick="addBeneficiary(${branchId}, '${esc(branchName).replace(/'/g,"\\'")}')">הוספה</button>
-      </div>
-      <table style="margin-top:14px;"><thead><tr><th>שם</th><th>טלפון</th><th>סכום חודשי</th><th></th></tr></thead>
-      <tbody>${data.beneficiaries.map(b => `<tr><td>${esc(b.name)}</td><td>${esc(b.phone||"-")}</td>
-        <td>${b.monthly_amount ? "₪"+b.monthly_amount : "-"}</td>
-        <td><button class="danger" onclick="deleteBeneficiary(${b.id}, ${branchId}, '${esc(branchName).replace(/'/g,"\\'")}')">מחיקה</button></td></tr>`).join("") || "<tr><td colspan='4' class='muted'>אין מוטבים עדיין</td></tr>"}
-      </tbody></table>
-    </div>`;
+    <div style="font-weight:800;font-size:17px;margin:14px 0 4px;">הוצאות קבועות - ${esc(branchName)}</div>
+    <div class="muted" style="margin-bottom:10px;">הסכום שנקבע כאן ממשיך "לחיות" בכל חודש - לא צריך להזין אותו מחדש. עורכים רק כשיש שינוי בפועל.</div>
+    ${BENEFICIARY_CATEGORIES.map(([cat, label, namePlaceholder]) => {
+      const list = data.beneficiaries.filter(b => b.category === cat);
+      return `<div class="card">
+        <div style="font-weight:700;margin-bottom:10px;">${label}</div>
+        <div class="row">
+          <input id="benName_${cat}" placeholder="${namePlaceholder}" style="flex:1;">
+          <input id="benPhone_${cat}" placeholder="טלפון (רשות)">
+          <input id="benAmount_${cat}" placeholder="סכום חודשי" type="number">
+          <button onclick="addBeneficiary(${branchId}, '${bn}', '${cat}')">הוספה</button>
+        </div>
+        <table style="margin-top:14px;"><thead><tr><th>שם</th><th>טלפון</th><th>סכום חודשי</th><th></th></tr></thead>
+        <tbody>${list.map(b => `<tr><td>${esc(b.name)}</td><td>${esc(b.phone||"-")}</td>
+          <td>${b.monthly_amount ? "₪"+b.monthly_amount : "-"}</td>
+          <td class="row" style="gap:6px;">
+            <button class="secondary" onclick="editBeneficiaryAmount(${b.id}, ${branchId}, '${bn}', ${b.monthly_amount || 0})">✎ עריכה</button>
+            <button class="danger" onclick="deleteBeneficiary(${b.id}, ${branchId}, '${bn}')">מחיקה</button>
+          </td></tr>`).join("") || `<tr><td colspan='4' class='muted'>אין רשומות עדיין</td></tr>`}
+        </tbody></table>
+      </div>`;
+    }).join("")}`;
 }
-async function addBeneficiary(branchId, branchName) {
-  const name = document.getElementById("benName").value.trim();
-  const phone = document.getElementById("benPhone").value.trim();
-  const monthlyAmount = document.getElementById("benAmount").value;
+async function addBeneficiary(branchId, branchName, category) {
+  const name = document.getElementById(`benName_${category}`).value.trim();
+  const phone = document.getElementById(`benPhone_${category}`).value.trim();
+  const monthlyAmount = document.getElementById(`benAmount_${category}`).value;
   if (!name) return;
-  await api(`/api/branches/${branchId}/beneficiaries`, { method: "POST", body: { name, phone, monthlyAmount: monthlyAmount ? Number(monthlyAmount) : null } });
+  await api(`/api/branches/${branchId}/beneficiaries`, { method: "POST", body: {
+    name, phone, category, monthlyAmount: monthlyAmount ? Number(monthlyAmount) : null,
+  }});
+  openBeneficiaries(branchId, branchName);
+}
+async function editBeneficiaryAmount(id, branchId, branchName, currentAmount) {
+  const newAmount = prompt("סכום חודשי חדש:", currentAmount || "");
+  if (newAmount === null) return;
+  await api("/api/beneficiaries/" + id, { method: "PUT", body: { monthlyAmount: Number(newAmount) || null } });
   openBeneficiaries(branchId, branchName);
 }
 async function deleteBeneficiary(id, branchId, branchName) {
   await api("/api/beneficiaries/" + id, { method: "DELETE" });
   openBeneficiaries(branchId, branchName);
+}
+
+// ---------- מוטבים - תצוגה שטוחה של כל הסניפים יחד (כדי לזהות מיד סכומים זהים מול הסניף) ----------
+async function renderBeneficiariesAll() {
+  const main = document.getElementById("mainArea");
+  const data = await api("/api/beneficiaries");
+  const catLabel = { salary: "משכורת", electricity: "חשמל", property_tax: "ארנונה" };
+  main.innerHTML = `<div class="card">
+    <div style="font-weight:700;margin-bottom:10px;">כל ההוצאות הקבועות - כל הסניפים</div>
+    <table><thead><tr><th>סניף</th><th>סוג</th><th>שם</th><th>סכום חודשי</th><th></th></tr></thead>
+    <tbody>${data.beneficiaries.map(b => `<tr><td><b>${esc(b.branch_name)}</b></td><td class="muted">${catLabel[b.category]||b.category}</td>
+      <td>${esc(b.name)}</td><td>${b.monthly_amount ? "₪"+b.monthly_amount : "-"}</td>
+      <td><button class="secondary" onclick="openBeneficiaries(${b.branch_id}, '${safeStr(b.branch_name)}')">פתיחה בסניף</button></td></tr>`).join("")
+      || "<tr><td colspan='5' class='muted'>אין עדיין הוצאות קבועות</td></tr>"}
+    </tbody></table>
+  </div>`;
 }
 
 // ---------- הוראות (מנהל) ----------
