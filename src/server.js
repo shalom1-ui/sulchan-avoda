@@ -21,6 +21,18 @@ router.get("/", async (ctx) => {
   }
 });
 
+// "ממיר דקות" - כלי עצמאי (client-side בלבד, בלי שרת/מסד נתונים משלו) שהוגש בעבר כאתר סטטי נפרד -
+// עכשיו גם מוגש כאן בטאב בתוך "שולחן עבודה" (ר' טאב "ממיר דקות" ב-public/app.html, שטוען אותו
+// בתוך iframe). מוגש בנתיב סטטי נפרד מ-"/" כדי שלא יתנגש עם ה-SPA הראשי.
+const MINUTES_CONVERTER_PATH = path.join(__dirname, "..", "public", "minutes-converter.html");
+router.get("/minutes-converter.html", async (ctx) => {
+  try {
+    return html(ctx.res, 200, fs.readFileSync(MINUTES_CONVERTER_PATH, "utf8"));
+  } catch (e) {
+    return json(ctx.res, 500, { error: "לא נמצא קובץ ממיר הדקות" });
+  }
+});
+
 require("./routes/auth").register(router);
 require("./routes/branches").register(router);
 require("./routes/beneficiaries").register(router);

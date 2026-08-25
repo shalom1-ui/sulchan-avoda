@@ -1,0 +1,463 @@
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<style>
+  :root{
+    --bg: #12161d;
+    --surface: #1a2029;
+    --surface-2: #212836;
+    --line: #2b3242;
+    --text: #eef0f4;
+    --muted: #8c94a6;
+    --accent: #2fb08d;
+    --accent-soft: #1f6a56;
+    --warn: #e8a33d;
+    --danger: #d9614f;
+    --radius: 14px;
+  }
+  *{box-sizing:border-box;}
+  .platform-root{
+    direction: rtl;
+    font-family: 'Rubik', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100%;
+    padding: 40px 20px 60px;
+    display: flex;
+    justify-content: center;
+  }
+  .wrap{ width: 100%; max-width: 760px; }
+
+  .header{ margin-bottom: 28px; }
+  .eyebrow{
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .title{
+    font-size: 28px;
+    font-weight: 800;
+    margin: 0 0 6px;
+  }
+  .subtitle{ color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+
+  .court-line{
+    height: 1px;
+    background: repeating-linear-gradient(90deg, var(--line) 0 10px, transparent 10px 16px);
+    margin: 26px 0;
+  }
+
+  .card{
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 18px;
+  }
+  .card-title{
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    margin: 0 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title .num{
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent);
+    background: rgba(47,176,141,0.12);
+    border: 1px solid var(--accent-soft);
+    width: 22px; height: 22px;
+    border-radius: 6px;
+    display: flex; align-items:center; justify-content:center;
+    font-size: 11px;
+  }
+
+  .month-row{ display: flex; gap: 10px; }
+  select, input[type=text], input[type=number]{
+    font-family: 'Rubik', sans-serif;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 11px 12px;
+    font-size: 14.5px;
+    outline: none;
+  }
+  select:focus, input:focus{ border-color: var(--accent); }
+  .month-row select:first-child{ flex: 1.3; }
+  .month-row input{ flex: 1; }
+
+  .dropzone{
+    margin-top: 16px;
+    border: 1.5px dashed var(--line);
+    border-radius: 12px;
+    padding: 28px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .dropzone:hover, .dropzone.drag{
+    border-color: var(--accent);
+    background: rgba(47,176,141,0.06);
+  }
+  .dropzone input{ display:none; }
+  .dz-icon{ font-size: 26px; margin-bottom: 8px; }
+  .dz-text{ font-size: 14px; color: var(--text); font-weight: 500; }
+  .dz-sub{ font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  .file-chip{
+    display: inline-flex; align-items:center; gap:8px;
+    background: var(--surface-2);
+    border: 1px solid var(--accent-soft);
+    padding: 7px 12px;
+    border-radius: 999px;
+    font-size: 13px;
+    margin-top: 12px;
+  }
+  .file-chip .dot{ width:7px; height:7px; border-radius:50%; background: var(--accent); }
+
+  button.primary{
+    width: 100%;
+    margin-top: 18px;
+    background: var(--accent);
+    color: #0d1310;
+    border: none;
+    border-radius: 10px;
+    padding: 13px;
+    font-family: 'Rubik', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    cursor: pointer;
+    transition: filter .15s, transform .1s;
+  }
+  button.primary:hover{ filter: brightness(1.08); }
+  button.primary:active{ transform: scale(0.99); }
+  button.primary:disabled{
+    background: var(--surface-2);
+    color: var(--muted);
+    cursor: not-allowed;
+  }
+
+  .status{
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-top: 10px;
+    min-height: 16px;
+  }
+  .status.err{ color: var(--danger); }
+  .status.ok{ color: var(--accent); }
+
+  .result-grid{
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    margin-top: 4px;
+  }
+  .stat{
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px;
+    text-align: center;
+  }
+  .stat .n{ font-family:'JetBrains Mono',monospace; font-size: 20px; font-weight:700; color: var(--accent);}
+  .stat .l{ font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+
+  .download-btn{
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    width: 100%;
+    margin-top: 16px;
+    background: var(--warn);
+    color: #201404;
+    border: none;
+    border-radius: 10px;
+    padding: 13px;
+    font-family: 'Rubik', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  .download-btn:hover{ filter: brightness(1.06); }
+
+  .history-item{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 13px 4px;
+    border-bottom: 1px dashed var(--line);
+  }
+  .history-item:last-child{ border-bottom: none; }
+  .hi-left{ display:flex; flex-direction:column; gap:3px; }
+  .hi-month{ font-weight: 600; font-size: 14px; }
+  .hi-meta{ font-size: 12px; color: var(--muted); font-family:'JetBrains Mono',monospace; }
+  .hi-btn{
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 7px 12px;
+    font-size: 12.5px;
+    cursor: pointer;
+    font-family: 'Rubik', sans-serif;
+  }
+  .hi-btn:hover{ border-color: var(--accent); color: var(--accent); }
+  .empty-hist{ color: var(--muted); font-size: 13px; text-align:center; padding: 10px 0; }
+</style>
+
+<div class="platform-root">
+  <div class="wrap">
+    <div class="header">
+      <div class="eyebrow">מרכז המרת דוחות · 30%</div>
+      <h1 class="title">ממיר דקות → יתרות</h1>
+      <div class="subtitle">מעלים את דוח ניצול הדקות החודשי, בוחרים חודש, והמערכת מפיקה אוטומטית קובץ יתרות (30% מהדקות של כל טלפון) בתבנית הקבועה.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="num">1</span> באיזה חודש מדובר?</div>
+      <div class="month-row">
+        <select id="monthSelect"></select>
+        <input type="number" id="yearInput" placeholder="שנה" />
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="num">2</span> העלאת דוח ניצול דקות</div>
+      <div class="dropzone" id="dropzone">
+        <div class="dz-icon">📄</div>
+        <div class="dz-text">גררו קובץ אקסל לכאן, או לחצו לבחירה</div>
+        <div class="dz-sub">קובץ .xlsx של דוח ניצול דקות</div>
+        <input type="file" id="fileInput" accept=".xlsx,.xls" />
+      </div>
+      <div id="fileChipHolder"></div>
+      <button class="primary" id="processBtn" disabled>עבד קובץ והפק יתרות</button>
+      <div class="status" id="statusLine"></div>
+    </div>
+
+    <div class="card" id="resultsCard" style="display:none;">
+      <div class="card-title"><span class="num">✓</span> תוצאה</div>
+      <div class="result-grid">
+        <div class="stat"><div class="n" id="statPhones">0</div><div class="l">טלפונים</div></div>
+        <div class="stat"><div class="n" id="statMinutes">0</div><div class="l">סה״כ דקות (30%)</div></div>
+        <div class="stat"><div class="n" id="statMonth">-</div><div class="l">חודש</div></div>
+      </div>
+      <button class="download-btn" id="downloadBtn">⬇ הורדת קובץ יתרות</button>
+    </div>
+
+    <div class="court-line"></div>
+
+    <div class="card">
+      <div class="card-title"><span class="num">↺</span> היסטוריית המרות</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">* ההיסטוריה נשמרת בדפדפן הזה בלבד. אם תפתחו את הלינק ממחשב אחר, ההיסטוריה שם תהיה נפרדת.</div>
+      <div id="historyList"><div class="empty-hist">עדיין אין המרות שמורות</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const HEBREW_MONTHS = ["ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
+  const monthSelect = document.getElementById('monthSelect');
+  HEBREW_MONTHS.forEach((m, i) => {
+    const opt = document.createElement('option');
+    opt.value = i+1;
+    opt.textContent = m;
+    monthSelect.appendChild(opt);
+  });
+  const now = new Date();
+  monthSelect.value = now.getMonth()+1;
+  document.getElementById('yearInput').value = now.getFullYear();
+
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const fileChipHolder = document.getElementById('fileChipHolder');
+  const processBtn = document.getElementById('processBtn');
+  const statusLine = document.getElementById('statusLine');
+  const resultsCard = document.getElementById('resultsCard');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const historyList = document.getElementById('historyList');
+
+  let currentFile = null;
+  let currentRecords = null; // [{phone, extra}]
+  let currentWorkbookOut = null;
+
+  function buildWorkbook(records){
+    const headers = ['מזהה','טלפון','דקות','עלות הוספת דקות','שווי זמן להמרה להדפסה','ערך צבור להדפסה','עלות הוספת ערך צבור להדפסה'];
+    const aoa = [headers];
+    records.forEach(r => {
+      aoa.push([null, Number(r.phone), r.extra, null, null, null, null]);
+    });
+    const sheet = XLSX.utils.aoa_to_sheet(aoa);
+    sheet['!cols'] = [{wch:8},{wch:16},{wch:10},{wch:16},{wch:20},{wch:16},{wch:24}];
+    // force phone + minutes columns to be read as numbers
+    const range = XLSX.utils.decode_range(sheet['!ref']);
+    for (let r = 1; r <= range.e.r; r++){
+      const phoneCell = sheet[XLSX.utils.encode_cell({r, c:1})];
+      if (phoneCell) phoneCell.t = 'n';
+      const minCell = sheet[XLSX.utils.encode_cell({r, c:2})];
+      if (minCell) minCell.t = 'n';
+    }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, 'תבנית');
+    return wb;
+  }
+
+  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+  dropzone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropzone.classList.remove('drag');
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', e => {
+    if (e.target.files.length) handleFile(e.target.files[0]);
+  });
+
+  function handleFile(file){
+    currentFile = file;
+    fileChipHolder.innerHTML = `<div class="file-chip"><span class="dot"></span>${file.name}</div>`;
+    processBtn.disabled = false;
+    statusLine.textContent = '';
+    statusLine.className = 'status';
+    resultsCard.style.display = 'none';
+  }
+
+  processBtn.addEventListener('click', () => {
+    if (!currentFile) return;
+    statusLine.textContent = 'קורא קובץ...';
+    statusLine.className = 'status';
+    processBtn.disabled = true;
+
+    const reader = new FileReader();
+    reader.onload = function(e){
+      try{
+        const data = new Uint8Array(e.target.result);
+        const wb = XLSX.read(data, {type: 'array'});
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, {header: 1, raw: true, defval: null});
+
+        const pattern = /טלפון:\s*([0-9\-]+)\s*\(סך דקות\s*([\d,]+\.?\d*)\)/;
+        const records = [];
+        for (const row of rows){
+          const cell = row[0];
+          if (typeof cell === 'string' && cell.trim().startsWith('טלפון')){
+            const m = pattern.exec(cell);
+            if (m){
+              const phone = m[1];
+              const amount = parseFloat(m[2].replace(/,/g, ''));
+              const extra = Math.round(amount * 0.30 * 100) / 100;
+              records.push({phone, extra});
+            }
+          }
+        }
+
+        if (records.length === 0){
+          statusLine.textContent = 'לא נמצאו שורות "טלפון: ... (סך דקות ...)" בקובץ. ודאו שזה דוח ניצול הדקות המקורי.';
+          statusLine.className = 'status err';
+          processBtn.disabled = false;
+          return;
+        }
+
+        currentRecords = records;
+        currentWorkbookOut = buildWorkbook(records);
+
+        const totalMinutes = records.reduce((s,r) => s + r.extra, 0);
+        document.getElementById('statPhones').textContent = records.length;
+        document.getElementById('statMinutes').textContent = totalMinutes.toLocaleString('he-IL', {maximumFractionDigits:1});
+        const monthName = HEBREW_MONTHS[parseInt(monthSelect.value,10)-1];
+        const year = document.getElementById('yearInput').value || now.getFullYear();
+        document.getElementById('statMonth').textContent = monthName + ' ' + year;
+
+        resultsCard.style.display = 'block';
+        statusLine.textContent = `זוהו ${records.length} טלפונים בהצלחה.`;
+        statusLine.className = 'status ok';
+        processBtn.disabled = false;
+
+        saveToHistory(monthName, year, records);
+      } catch(err){
+        console.error(err);
+        statusLine.textContent = 'שגיאה בקריאת הקובץ: ' + err.message;
+        statusLine.className = 'status err';
+        processBtn.disabled = false;
+      }
+    };
+    reader.readAsArrayBuffer(currentFile);
+  });
+
+  downloadBtn.addEventListener('click', () => {
+    if (!currentWorkbookOut) return;
+    const monthName = HEBREW_MONTHS[parseInt(monthSelect.value,10)-1];
+    const year = document.getElementById('yearInput').value || now.getFullYear();
+    XLSX.writeFile(currentWorkbookOut, `קובץ_טעינת_יתרות_${monthName}_${year}.xlsx`);
+  });
+
+  const STORAGE_PREFIX = 'minutes-converter:conversion:';
+
+  function saveToHistory(monthName, year, records){
+    const key = `${STORAGE_PREFIX}${year}-${String(parseInt(monthSelect.value,10)).padStart(2,'0')}`;
+    const payload = {
+      month: monthName,
+      year: year,
+      count: records.length,
+      totalMinutes: records.reduce((s,r)=>s+r.extra,0),
+      records: records,
+      savedAt: new Date().toISOString()
+    };
+    try{
+      localStorage.setItem(key, JSON.stringify(payload));
+      renderHistory();
+    } catch(err){
+      console.error('storage save failed', err);
+      statusLine.textContent = 'הקובץ נוצר, אך שמירת ההיסטוריה נכשלה (אחסון הדפדפן חסום).';
+      statusLine.className = 'status err';
+    }
+  }
+
+  function renderHistory(){
+    try{
+      const items = [];
+      for (let i = 0; i < localStorage.length; i++){
+        const k = localStorage.key(i);
+        if (k && k.startsWith(STORAGE_PREFIX)){
+          try{
+            const val = localStorage.getItem(k);
+            if (val) items.push(JSON.parse(val));
+          } catch(e){ /* skip corrupted entry */ }
+        }
+      }
+      if (items.length === 0){
+        historyList.innerHTML = '<div class="empty-hist">עדיין אין המרות שמורות</div>';
+        return;
+      }
+      items.sort((a,b) => (b.year - a.year) || (HEBREW_MONTHS.indexOf(b.month) - HEBREW_MONTHS.indexOf(a.month)));
+      historyList.innerHTML = '';
+      items.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'history-item';
+        div.innerHTML = `
+          <div class="hi-left">
+            <div class="hi-month">${item.month} ${item.year}</div>
+            <div class="hi-meta">${item.count} טלפונים · ${Math.round(item.totalMinutes)} דקות</div>
+          </div>
+          <button class="hi-btn">הורדה מחדש</button>
+        `;
+        div.querySelector('.hi-btn').addEventListener('click', () => {
+          const wb = buildWorkbook(item.records);
+          XLSX.writeFile(wb, `קובץ_טעינת_יתרות_${item.month}_${item.year}.xlsx`);
+        });
+        historyList.appendChild(div);
+      });
+    } catch(err){
+      console.error('history load failed', err);
+      historyList.innerHTML = '<div class="empty-hist">לא ניתן לטעון היסטוריה</div>';
+    }
+  }
+
+  renderHistory();
+})();
+</script>

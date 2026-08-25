@@ -44,6 +44,18 @@ function register(router) {
     return json(ctx.res, 201, { transaction: row });
   }));
 
+  // עדכון קטגוריה (טקסט חופשי) לתנועה קיימת - שימושי בעיקר לתנועות מיובאות שקיבלו "אחר" כברירת מחדל.
+  router.put("/api/transactions/:id", requireAdmin(async (ctx) => {
+    const row = db.prepare("SELECT * FROM transactions WHERE id = ?").get(ctx.params.id);
+    if (!row) return json(ctx.res, 404, { error: "תנועה לא נמצאה" });
+    const { category } = ctx.body;
+    db.prepare("UPDATE transactions SET category = ? WHERE id = ?").run(
+      category !== undefined ? (category || null) : row.category,
+      row.id
+    );
+    return json(ctx.res, 200, { transaction: db.prepare("SELECT * FROM transactions WHERE id = ?").get(row.id) });
+  }));
+
   router.delete("/api/transactions/:id", requireAdmin(async (ctx) => {
     const row = db.prepare("SELECT * FROM transactions WHERE id = ?").get(ctx.params.id);
     if (!row) return json(ctx.res, 404, { error: "תנועה לא נמצאה" });

@@ -143,7 +143,7 @@ async function boot() {
 
 function buildNav() {
   const tabs = ME.role === "admin"
-    ? [["dashboard","לוח בקרה"],["branches","סניפים"],["instructions","הוראות"],["reports","דיווחים"],["chat","צ'אט"],["users","משתמשים"],["finance","כספים"]]
+    ? [["dashboard","לוח בקרה"],["branches","סניפים"],["instructions","הוראות"],["reports","דיווחים"],["chat","צ'אט"],["users","משתמשים"],["finance","כספים"],["minutesConverter","ממיר דקות"]]
     : [["myInstructions","ההוראות שלי"],["myReport","דיווח"],["chat","צ'אט"]];
   const nav = document.getElementById("navBar");
   nav.innerHTML = "";
@@ -166,9 +166,17 @@ function showTab(key) {
   const renderers = {
     dashboard: renderDashboard, branches: renderBranches, instructions: renderInstructions,
     reports: renderReports, chat: renderChatThreads, users: renderUsers, finance: renderFinance,
-    myInstructions: renderMyInstructions, myReport: renderMyReport,
+    myInstructions: renderMyInstructions, myReport: renderMyReport, minutesConverter: renderMinutesConverter,
   };
   (renderers[key] || (() => {}))();
+}
+
+// "ממיר דקות" - כלי עצמאי ב-iframe (ר' src/server.js, /minutes-converter.html). לגמרי client-side -
+// לא נוגע ב-API שלנו בכלל, וההיסטוריה שלו נשמרת ב-localStorage של ה-iframe עצמו (נפרד מהאתר הראשי).
+function renderMinutesConverter() {
+  const main = document.getElementById("mainArea");
+  main.innerHTML = `<iframe src="/minutes-converter.html" title="ממיר דקות"
+    style="width:100%;min-height:1000px;border:none;border-radius:var(--radius);background:var(--bg);"></iframe>`;
 }
 
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
@@ -471,7 +479,9 @@ async function renderFinance() {
     </div>
     <div class="card"><table><thead><tr><th>תאריך</th><th>סוג</th><th>סכום</th><th>קטגוריה</th><th>סניף</th><th></th></tr></thead>
     <tbody>${txData.transactions.slice(0,50).map(t => `<tr><td class="muted">${fmtDate(t.occurred_at)}</td>
-      <td>${t.type === "income" ? "הכנסה" : "הוצאה"}</td><td>₪${t.amount}</td><td>${esc(t.category||"-")}</td>
+      <td>${t.type === "income" ? "הכנסה" : "הוצאה"}</td><td>₪${t.amount}</td>
+      <td><span class="row" style="gap:6px;">${esc(t.category||"-")}
+        <button class="secondary" style="padding:2px 8px;font-size:11.5px;" onclick="editTransactionCategory(${t.id}, '${esc(t.category||"").replace(/'/g,"\\'")}')">✎</button></span></td>
       <td>${esc(t.branch_name||"-")}</td><td><button class="danger" onclick="deleteTransaction(${t.id})">מחיקה</button></td></tr>`).join("") || "<tr><td colspan='6' class='muted'>אין תנועות עדיין</td></tr>"}
     </tbody></table></div>`;
 }
@@ -488,6 +498,12 @@ async function addTransaction() {
 async function deleteTransaction(id) {
   if (!confirm("למחוק?")) return;
   await api("/api/transactions/" + id, { method: "DELETE" });
+  renderFinance();
+}
+async function editTransactionCategory(id, currentCategory) {
+  const newCategory = prompt("קטגוריה חדשה (טקסט חופשי):", currentCategory || "");
+  if (newCategory === null) return; // בוטל
+  await api("/api/transactions/" + id, { method: "PUT", body: { category: newCategory.trim() } });
   renderFinance();
 }
 function renderTrendChart(trend) {
