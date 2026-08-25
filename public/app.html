@@ -54,20 +54,10 @@
     position:sticky;top:0;z-index:5;
   }
   header .title{font-weight:800;font-size:17px;}
-  /* ---- לוגו העמותה: "מסך" עם גרדיאנט (ירוק->טורקיז->סגול->מג'נטה), כמו קובץ הלוגו שהתקבל ---- */
-  .logo-monitor{display:inline-flex;border-radius:14px;padding:5px;flex-shrink:0;
-    background:linear-gradient(135deg,var(--logo-green),var(--logo-teal) 40%,var(--logo-purple) 70%,var(--logo-magenta));}
-  .logo-monitor-inner{background:#fff;border-radius:9px;text-align:center;padding:6px 10px;}
-  .logo-text{font-weight:800;line-height:1.08;white-space:nowrap;
-    background:linear-gradient(135deg,var(--logo-green),var(--logo-teal) 40%,var(--logo-purple) 70%,var(--logo-magenta));
-    -webkit-background-clip:text;background-clip:text;color:transparent;}
-  .logo-sub{color:var(--logo-teal);margin-top:2px;white-space:nowrap;}
-  .logo-stand{width:24px;height:12px;margin:3px auto 0;
-    background:linear-gradient(135deg,var(--logo-green),var(--logo-teal));
-    clip-path:polygon(35% 0,65% 0,100% 100%,0% 100%);}
-  .logo-base{width:44px;height:4px;margin:0 auto;border-radius:2px;
-    background:linear-gradient(90deg,var(--logo-green),var(--logo-purple));}
+  /* לוגו העמותה - קובץ תמונה אמיתי (public/logo.png, מוגש דרך GET /logo.png), לא שחזור ב-CSS */
   .logo-row{display:flex;align-items:center;gap:10px;}
+  .logo-login{max-width:230px;width:100%;height:auto;display:block;}
+  .logo-header{height:36px;width:auto;display:block;}
   nav{display:flex;gap:6px;padding:10px 24px;overflow-x:auto;background:var(--surface);border-bottom:1px solid var(--line);}
   nav button{background:transparent;color:var(--muted);border:1px solid transparent;white-space:nowrap;}
   nav button.active{background:var(--surface-2);color:var(--accent);border-color:var(--accent-soft);}
@@ -93,15 +83,8 @@
 
 <div id="loginScreen">
   <div id="loginBox" class="card">
-    <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:14px;">
-      <div class="logo-monitor">
-        <div class="logo-monitor-inner" style="padding:16px 24px;">
-          <div class="logo-text" style="font-size:26px;">שולחן<br>עבודה</div>
-          <div class="logo-sub" style="font-size:11px;">מרחב עבודה איכותי בהוצאה כשרה</div>
-        </div>
-      </div>
-      <div class="logo-stand"></div>
-      <div class="logo-base"></div>
+    <div style="display:flex;justify-content:center;margin-bottom:14px;">
+      <img src="/logo.png" alt="לוגו שולחן עבודה" class="logo-login">
     </div>
     <div class="muted" style="margin-bottom:18px;text-align:center;" id="loginSubtitle">כניסה למערכת ניהול</div>
     <div id="loginFormArea">
@@ -120,11 +103,7 @@
 <div id="appShell">
   <header>
     <div class="logo-row">
-      <div class="logo-monitor" style="padding:3px;">
-        <div class="logo-monitor-inner" style="padding:3px 8px;">
-          <div class="logo-text" style="font-size:12.5px;">שולחן עבודה</div>
-        </div>
-      </div>
+      <img src="/logo.png" alt="שולחן עבודה" class="logo-header">
       <div class="title">שולחן עבודה - ניהול</div>
     </div>
     <div class="row">

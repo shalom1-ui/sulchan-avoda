@@ -4,7 +4,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const { Router, json, html } = require("./router");
+const { Router, json, html, raw } = require("./router");
 const debugLog = require("./debugLog");
 
 // עוטפים את console.log/console.error כדי לתפוס אוטומטית שורות אבחון רלוונטיות (מייל, ימות, שגיאות
@@ -84,6 +84,16 @@ router.get("/minutes-converter.html", async (ctx) => {
     return html(ctx.res, 200, fs.readFileSync(MINUTES_CONVERTER_PATH, "utf8"));
   } catch (e) {
     return json(ctx.res, 500, { error: "לא נמצא קובץ ממיר הדקות" });
+  }
+});
+
+// לוגו העמותה (קובץ תמונה סטטי) - מוצג במסך הכניסה ובכותרת הקבועה, ר' public/app.html.
+const LOGO_PATH = path.join(__dirname, "..", "public", "logo.png");
+router.get("/logo.png", async (ctx) => {
+  try {
+    return raw(ctx.res, 200, fs.readFileSync(LOGO_PATH), { contentType: "image/png" });
+  } catch (e) {
+    return json(ctx.res, 404, { error: "לוגו לא נמצא" });
   }
 });
 
