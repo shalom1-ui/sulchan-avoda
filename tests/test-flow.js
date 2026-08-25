@@ -72,6 +72,43 @@ async function main() {
   const usersAfterRename = await call("/api/users", { token: adminToken });
   ok(usersAfterRename.data.users.find(u => u.id === workerId).full_name === "שלום כהן", "השם החדש נשמר ומוחזר נכון");
 
+  // --- שכחתי סיסמה: תשובה גנרית תמיד, וקוד אמיתי נוצר רק אם למשתמש יש מייל ---
+  // (משתמש נפרד לבדיקה הזו, כדי לא לשנות את הסיסמה של worker1 שנבדקת בהמשך בשלוחת ימות)
+  const forgotTestUser = await call("/api/users", { method: "POST", token: adminToken, body: {
+    fullName: "עובד לבדיקת איפוס", username: "forgotuser", pin: "1234", role: "worker", email: "forgotuser@example.com",
+  }});
+  ok(forgotTestUser.status === 201, "נוצר עובד ייעודי לבדיקת שכחתי-סיסמה");
+
+  const forgotUnknown = await call("/api/forgot-password/request", { method: "POST", body: { username: "לא-קיים" } });
+  ok(forgotUnknown.status === 200, "בקשת איפוס לשם משתמש לא קיים מחזירה תשובה גנרית (לא חושפת מידע)");
+
+  // לוכדים את הקוד בפועל מתוך הלוג (מצב MOCK) כדי לבדוק את זרימת האישור המלאה מקצה לקצה
+  let capturedCode = null;
+  const originalLog = console.log;
+  console.log = (...args) => { const line = args.join(" "); const m = line.match(/קוד לאיפוס הסיסמה שלכם: (\d{4})/); if (m) capturedCode = m[1]; originalLog(...args); };
+  const forgotRequest = await call("/api/forgot-password/request", { method: "POST", body: { username: "forgotuser" } });
+  console.log = originalLog;
+  ok(forgotRequest.status === 200 && capturedCode, "בקשת איפוס למשתמש עם מייל שולחת קוד (MOCK - נלכד מהלוג)");
+
+  const confirmWrongCode = await call("/api/forgot-password/confirm", { method: "POST", body: { username: "forgotuser", code: "0000", newPin: "9999" } });
+  ok(confirmWrongCode.status === 400, "אישור עם קוד שגוי נדחה");
+
+  const confirmRight = await call("/api/forgot-password/confirm", { method: "POST", body: { username: "forgotuser", code: capturedCode, newPin: "9999" } });
+  ok(confirmRight.status === 200, "אישור עם קוד נכון מאפס את הסיסמה");
+
+  const loginWithNewPin = await call("/api/login", { method: "POST", body: { username: "forgotuser", pin: "9999" } });
+  ok(loginWithNewPin.status === 200, "התחברות עם הסיסמה החדשה (אחרי איפוס) עובדת");
+  const loginWithOldPin = await call("/api/login", { method: "POST", body: { username: "forgotuser", pin: "1234" } });
+  ok(loginWithOldPin.status === 401, "הסיסמה הישנה כבר לא עובדת אחרי איפוס");
+
+  // --- כלי חירום: איפוס PIN ישיר דרך debug endpoint (מוגן במפתח קבוע) ---
+  const debugResetWrongKey = await call("/api/debug/reset-user-pin", { method: "POST", body: { key: "wrong", username: "forgotuser", newPin: "1111" } });
+  ok(debugResetWrongKey.status === 403, "כלי איפוס החירום דוחה מפתח שגוי");
+  const debugReset = await call("/api/debug/reset-user-pin", { method: "POST", body: { key: "sulchan-diag-7429", username: "forgotuser", newPin: "1111" } });
+  ok(debugReset.status === 200, "כלי איפוס החירום מאפס PIN עם המפתח הנכון");
+  const loginAfterDebugReset = await call("/api/login", { method: "POST", body: { username: "forgotuser", pin: "1111" } });
+  ok(loginAfterDebugReset.status === 200, "התחברות עובדת אחרי איפוס חירום");
+
   // --- הרשמה עצמית: נכשלת בלי הזמנה מראש, מצליחה אחרי שהמנהל מוסיף את המייל ---
   const registerBlocked = await call("/api/register", { method: "POST", body: {
     email: "new-worker@example.com", fullName: "עובד חדש", username: "newworker", pin: "1111",

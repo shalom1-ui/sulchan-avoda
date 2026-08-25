@@ -70,6 +70,7 @@
         <button id="loginBtn" onclick="doLogin()">כניסה</button>
         <div id="loginStatus" class="status-line"></div>
         <button class="secondary" onclick="showRegisterForm()">אין לי חשבון - הרשמה</button>
+        <a href="#" onclick="showForgotForm();return false;" style="text-align:center;font-size:13px;">שכחתי את הקוד</a>
       </div>
     </div>
   </div>
@@ -151,7 +152,44 @@ function showLoginForm() {
       <button id="loginBtn" onclick="doLogin()">כניסה</button>
       <div id="loginStatus" class="status-line"></div>
       <button class="secondary" onclick="showRegisterForm()">אין לי חשבון - הרשמה</button>
+      <a href="#" onclick="showForgotForm();return false;" style="text-align:center;font-size:13px;">שכחתי את הקוד</a>
     </div>`;
+}
+function showForgotForm() {
+  document.getElementById("loginSubtitle").textContent = "שחזור קוד";
+  document.getElementById("loginFormArea").innerHTML = `
+    <div class="row" style="flex-direction:column;align-items:stretch;gap:12px;">
+      <input id="forgotUsername" placeholder="שם משתמש" autocomplete="username">
+      <button onclick="requestResetCode()">שליחת קוד למייל</button>
+      <div id="forgotStatus" class="status-line"></div>
+      <div id="forgotStep2" style="display:none;">
+        <input id="forgotCode" placeholder="קוד מהמייל (4 ספרות)" maxlength="4" style="margin-bottom:10px;">
+        <input id="forgotNewPin" placeholder="קוד חדש (4 ספרות)" type="password" inputmode="numeric" maxlength="4" style="margin-bottom:10px;">
+        <button onclick="confirmResetCode()">איפוס הקוד</button>
+      </div>
+      <button class="secondary" onclick="showLoginForm()">חזרה לכניסה</button>
+    </div>`;
+}
+async function requestResetCode() {
+  const username = document.getElementById("forgotUsername").value.trim();
+  const statusEl = document.getElementById("forgotStatus");
+  if (!username) { statusEl.textContent = "נא להזין שם משתמש"; statusEl.className = "status-line err"; return; }
+  try {
+    const data = await api("/api/forgot-password/request", { method: "POST", body: { username } });
+    statusEl.textContent = data.message; statusEl.className = "status-line ok";
+    document.getElementById("forgotStep2").style.display = "block";
+  } catch (e) { statusEl.textContent = e.message; statusEl.className = "status-line err"; }
+}
+async function confirmResetCode() {
+  const username = document.getElementById("forgotUsername").value.trim();
+  const code = document.getElementById("forgotCode").value.trim();
+  const newPin = document.getElementById("forgotNewPin").value.trim();
+  const statusEl = document.getElementById("forgotStatus");
+  try {
+    await api("/api/forgot-password/confirm", { method: "POST", body: { username, code, newPin } });
+    statusEl.textContent = "הקוד אופס בהצלחה! אפשר להתחבר עכשיו."; statusEl.className = "status-line ok";
+    setTimeout(showLoginForm, 1500);
+  } catch (e) { statusEl.textContent = e.message; statusEl.className = "status-line err"; }
 }
 async function doRegister() {
   const email = document.getElementById("regEmail").value.trim();

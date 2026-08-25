@@ -37,6 +37,21 @@ router.get("/api/debug/recent-logs", async (ctx) => {
   return json(ctx.res, 200, { lines: debugLog.getAll() });
 });
 
+// כלי חירום זמני: איפוס קוד PIN של משתמש קיים, ללא צורך בהתחברות - למקרה נעילה מוחלטת (כמו
+// כשמנהל לא זוכר את הקוד ואין לו כתובת מייל רשומה, כך ש"שכחתי סיסמה" הרגיל לא יעבוד). מוגן באותה
+// מילת-מעבר כמו recent-logs. **יש להסיר את הנתיב הזה בהמשך** - זה כלי חירום זמני, לא אמצעי קבוע.
+router.post("/api/debug/reset-user-pin", async (ctx) => {
+  if (ctx.body.key !== "sulchan-diag-7429") return json(ctx.res, 403, { error: "לא מורשה" });
+  const { username, newPin } = ctx.body;
+  if (!username || !/^\d{4}$/.test(String(newPin || ""))) return json(ctx.res, 400, { error: "חסר username, או newPin לא בן 4 ספרות" });
+  const db = require("./db");
+  const { hashPassword } = require("./utils/crypto");
+  const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
+  if (!user) return json(ctx.res, 404, { error: "משתמש לא נמצא" });
+  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(String(newPin)), user.id);
+  return json(ctx.res, 200, { ok: true, fullName: user.full_name });
+});
+
 const APP_HTML_PATH = path.join(__dirname, "..", "public", "app.html");
 router.get("/", async (ctx) => {
   try {

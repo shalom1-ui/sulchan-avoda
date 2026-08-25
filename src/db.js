@@ -28,6 +28,8 @@ db.exec(`
     phone TEXT,                        -- מספר הטלפון שממנו מזוהה העובד בשלוחה (Caller ID), אופציונלי
     email TEXT,
     active INTEGER NOT NULL DEFAULT 1,
+    reset_code_hash TEXT,               -- קוד שחזור סיסמה (4 ספרות, hash) - ר' routes/auth.js forgot-password
+    reset_code_expires_at TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -187,6 +189,8 @@ for (const alterSql of [
   "ALTER TABLE transactions ADD COLUMN document_id INTEGER REFERENCES documents(id)",
   "ALTER TABLE beneficiaries ADD COLUMN category TEXT NOT NULL DEFAULT 'salary'",
   "ALTER TABLE reports ADD COLUMN needs_followup INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE users ADD COLUMN reset_code_hash TEXT",
+  "ALTER TABLE users ADD COLUMN reset_code_expires_at TEXT",
 ]) {
   try {
     db.exec(alterSql);

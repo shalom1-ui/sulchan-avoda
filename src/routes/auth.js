@@ -2,8 +2,9 @@
 "use strict";
 const db = require("../db");
 const { json } = require("../router");
-const { verifyPassword, hashPassword, signToken, isValidPin } = require("../utils/crypto");
+const { verifyPassword, hashPassword, signToken, isValidPin, generateOtpCode, hashCode } = require("../utils/crypto");
 const { requireAuth, requireAdmin } = require("../middleware/auth");
+const { sendEmail } = require("../services/email");
 
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
@@ -83,6 +84,49 @@ function register(router) {
       token,
       user: { id: user.id, fullName: user.full_name, username: user.username, role: user.role },
     });
+  });
+
+  // שכחתי סיסמה - שלב 1: מבקשים קוד. תשובה גנרית תמיד (גם אם שם המשתמש לא קיים) כדי לא לחשוף
+  // אילו שמות משתמש קיימים במערכת. הקוד עצמו נשלח רק אם יש למשתמש כתובת מייל רשומה.
+  router.post("/api/forgot-password/request", async (ctx) => {
+    const { username } = ctx.body;
+    const genericMsg = "אם שם המשתמש קיים ויש לו כתובת מייל רשומה, קוד נשלח אליה.";
+    if (!username) return json(ctx.res, 400, { error: "יש להזין שם משתמש" });
+    const user = db.prepare("SELECT * FROM users WHERE username = ? AND active = 1").get(username.trim());
+    if (user && user.email) {
+      const code = generateOtpCode();
+      db.prepare("UPDATE users SET reset_code_hash = ?, reset_code_expires_at = datetime('now', '+15 minutes') WHERE id = ?")
+        .run(hashCode(code), user.id);
+      sendEmail({
+        to: user.email,
+        subject: "קוד לאיפוס סיסמה - שולחן עבודה",
+        body: `שלום ${user.full_name},\n\nקוד לאיפוס הסיסמה שלכם: ${code}\n\nהקוד בתוקף ל-15 דקות. אם לא ביקשתם זאת, התעלמו מהודעה זו.`,
+      }).catch((e) => console.error("שליחת מייל איפוס סיסמה נכשלה:", e.message));
+    }
+    return json(ctx.res, 200, { message: genericMsg });
+  });
+
+  // שכחתי סיסמה - שלב 2: הזנת הקוד + סיסמה חדשה.
+  router.post("/api/forgot-password/confirm", async (ctx) => {
+    const { username, code, newPin } = ctx.body;
+    if (!username || !code || !newPin) return json(ctx.res, 400, { error: "חסרים שדות חובה" });
+    if (!isValidPin(newPin)) return json(ctx.res, 400, { error: "הקוד החדש חייב להיות בדיוק 4 ספרות" });
+    const user = db.prepare("SELECT * FROM users WHERE username = ? AND active = 1").get(username.trim());
+    if (!user || !user.reset_code_hash || !user.reset_code_expires_at) {
+      return json(ctx.res, 400, { error: "לא נמצאה בקשת איפוס פעילה עבור המשתמש הזה" });
+    }
+    // SQLite datetime() מחזיר "YYYY-MM-DD HH:MM:SS" (רווח, לא T) - צריך להמיר לפורמט ISO תקני לפני
+    // שDate() בג'אווהסקריפט יודע לפרש את זה נכון בכל הסביבות (במיוחד חשוב בשרת, לא רק בדפדפן).
+    const expiresAtIso = user.reset_code_expires_at.replace(" ", "T") + "Z";
+    if (new Date(expiresAtIso) < new Date()) {
+      return json(ctx.res, 400, { error: "הקוד פג תוקף - בקשו קוד חדש" });
+    }
+    if (hashCode(String(code).trim()) !== user.reset_code_hash) {
+      return json(ctx.res, 400, { error: "קוד שגוי" });
+    }
+    db.prepare("UPDATE users SET password_hash = ?, reset_code_hash = NULL, reset_code_expires_at = NULL WHERE id = ?")
+      .run(hashPassword(String(newPin)), user.id);
+    return json(ctx.res, 200, { ok: true });
   });
 
   router.get("/api/me", requireAuth(async (ctx) => {
