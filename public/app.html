@@ -459,12 +459,41 @@ async function renderChatThreads() {
     if (data.branches.length === 1) openChat(data.branches[0].id, ME.id);
     return;
   }
-  const data = await api("/api/chat/threads");
-  main.innerHTML = `<div class="card"><table><thead><tr><th>סניף</th><th>עובד</th><th>הודעה אחרונה</th><th>לא נקראו</th><th></th></tr></thead>
+  const [data, usersData] = await Promise.all([api("/api/chat/threads"), api("/api/users")]);
+  const workers = usersData.users.filter(u => u.role === "worker" && u.active);
+  main.innerHTML = `
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:10px;">שיחה חדשה</div>
+      <div class="row">
+        <select id="newChatWorker" style="flex:1;" onchange="loadWorkerBranchesForNewChat()">
+          <option value="">- בחרו עובד -</option>${workers.map(w => `<option value="${w.id}">${esc(w.full_name)}</option>`).join("")}
+        </select>
+        <select id="newChatBranch" style="flex:1;"><option value="">- קודם בחרו עובד -</option></select>
+        <button onclick="startNewChat()">התחלה</button>
+      </div>
+      <div id="newChatStatus" class="status-line"></div>
+    </div>
+    <div class="card"><table><thead><tr><th>סניף</th><th>עובד</th><th>הודעה אחרונה</th><th>לא נקראו</th><th></th></tr></thead>
     <tbody>${data.threads.map(t => `<tr><td>${esc(t.branch_name)}</td><td>${esc(t.worker_name)}</td>
       <td class="muted">${fmtDate(t.last_message_at)}</td><td>${t.unread_count > 0 ? `<span class="badge pending">${t.unread_count}</span>` : "-"}</td>
       <td><button class="secondary" onclick="openChat(${t.branch_id}, ${t.worker_user_id})">פתיחה</button></td></tr>`).join("") || "<tr><td colspan='5' class='muted'>אין שיחות עדיין</td></tr>"}
     </tbody></table></div><div id="chatArea"></div>`;
+}
+async function loadWorkerBranchesForNewChat() {
+  const workerId = document.getElementById("newChatWorker").value;
+  const branchSelect = document.getElementById("newChatBranch");
+  if (!workerId) { branchSelect.innerHTML = "<option value=''>- קודם בחרו עובד -</option>"; return; }
+  const data = await api(`/api/users/${workerId}/branches`);
+  branchSelect.innerHTML = data.branches.length
+    ? data.branches.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join("")
+    : "<option value=''>העובד לא משויך לאף סניף</option>";
+}
+function startNewChat() {
+  const workerId = document.getElementById("newChatWorker").value;
+  const branchId = document.getElementById("newChatBranch").value;
+  const statusEl = document.getElementById("newChatStatus");
+  if (!workerId || !branchId) { statusEl.textContent = "בחרו עובד וסניף"; statusEl.className = "status-line err"; return; }
+  openChat(Number(branchId), Number(workerId));
 }
 async function openChat(branchId, workerId) {
   const data = await api(`/api/chat/${branchId}/${workerId}`);
@@ -477,6 +506,7 @@ async function openChat(branchId, workerId) {
     <div class="row"><input id="chatInput" placeholder="הודעה..." style="flex:1;" onkeydown="if(event.key==='Enter')sendChat(${branchId},${workerId})">
       <button onclick="sendChat(${branchId},${workerId})">שליחה</button></div>
   </div>`;
+  area.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 async function sendChat(branchId, workerId) {
   const input = document.getElementById("chatInput");
