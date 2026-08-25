@@ -88,6 +88,15 @@ function afterReport(ctx, callSid, draft) {
   return continueFlow(ctx, callSid, draft);
 }
 
+// מספר הודעות צ'אט שלא נקראו עדיין ע"י העובד (מכל השרשורים שלו יחד) - מוזכר בקצרה בסוף השיחה
+// (ר' משוב המשתמש: התראה על צ'אט גם "בטלפון" - כאן זו רק הודעה קצרה שיש הודעות, לא הקראה מלאה
+// ולא אפשרות מענה בטלפון - זה כרגע מעבר ליכולת הטלפונית, ר' README).
+function unreadChatCount(workerUserId) {
+  return db.prepare(
+    "SELECT COUNT(*) AS c FROM chat_messages WHERE worker_user_id = ? AND sender_user_id != ? AND read_at IS NULL"
+  ).get(workerUserId, workerUserId).c;
+}
+
 // ממשיך לפריט הבא (הוראה הבאה בתור, או למעבר לדיווח יזום, או לסיום השיחה)
 function continueFlow(ctx, callSid, draft) {
   if (draft.mode === "instructions" && draft.idx < draft.instructionIds.length) {
@@ -100,7 +109,9 @@ function continueFlow(ctx, callSid, draft) {
     return text(ctx.res, 200, sayAndReadMenuDigit("סיימנו את כל ההוראות הממתינות. אם תרצו לדווח על משהו נוסף, הקישו 1. אחרת נתקו."));
   }
   endCall(callSid);
-  return text(ctx.res, 200, sayAndHangup("תודה, השיחה הסתיימה."));
+  const unread = draft.workerUserId ? unreadChatCount(draft.workerUserId) : 0;
+  const chatNote = unread > 0 ? ` יש לכם ${unread} הודעות חדשות בצ'אט - אפשר לראות אותן באתר.` : "";
+  return text(ctx.res, 200, sayAndHangup(`תודה, השיחה הסתיימה.${chatNote}`));
 }
 
 function askNextInstruction(ctx, callSid, draft) {
@@ -200,8 +211,8 @@ function register(router) {
     // --- הצעה לדיווח יזום (אחרי כל ההוראות, או אם לא היו הוראות) ---
     if (call.state === "adhoc_offer") {
       if (digit !== "1") {
-        endCall(callSid);
-        return text(ctx.res, 200, sayAndHangup("תודה, השיחה הסתיימה."));
+        draft.mode = "done";
+        return continueFlow(ctx, callSid, draft);
       }
       const branches = db.prepare(
         `SELECT b.* FROM branches b JOIN worker_branches wb ON wb.branch_id = b.id WHERE wb.worker_user_id = ? ORDER BY b.name`

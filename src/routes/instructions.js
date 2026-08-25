@@ -37,6 +37,12 @@ function register(router) {
     ).run(branchId, workerUserId, ctx.user.userId, text.trim());
     const instructionId = Number(info.lastInsertRowid);
 
+    // ההוראה מופיעה גם בשרשור הצ'אט של אותו (סניף, עובד) - כדי שהמנהל והעובד יראו הכל במקום אחד
+    // (ר' משוב המשתמש: "מה שיש בהוראות יהיה גם בצ'אט"). לא שולחת מייל/התראה כפולה - זו רק תצוגה.
+    db.prepare(
+      "INSERT INTO chat_messages (branch_id, worker_user_id, sender_user_id, text) VALUES (?, ?, ?, ?)"
+    ).run(branchId, workerUserId, ctx.user.userId, `📋 הוראה: ${text.trim()}`);
+
     let emailSent = false;
     if (worker.email) {
       try {

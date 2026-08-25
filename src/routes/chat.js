@@ -5,6 +5,7 @@ const db = require("../db");
 const { json } = require("../router");
 const { requireAuth } = require("../middleware/auth");
 const { createNotification } = require("../lib/notify");
+const { sendEmail } = require("../services/email");
 
 function register(router) {
   // רשימת שרשורים (למנהל: כולם; לעובד: רק שלו)
@@ -50,10 +51,23 @@ function register(router) {
       "INSERT INTO chat_messages (branch_id, worker_user_id, sender_user_id, text) VALUES (?, ?, ?, ?)"
     ).run(ctx.params.branchId, ctx.params.workerId, ctx.user.userId, text.trim());
 
+    const branch = db.prepare("SELECT name FROM branches WHERE id = ?").get(ctx.params.branchId);
+    const worker = db.prepare("SELECT full_name, email FROM users WHERE id = ?").get(ctx.params.workerId);
+
+    // כל הודעת צ'אט, מכל כיוון, מגיעה גם למייל של הצד השני - בנוסף להתראה הפנימית באתר (ר' משוב
+    // המשתמש: "כל הודעה מכל כיוון מגיעה לצד השני"). התראת "טלפון" לעובד ר' /yemot/instructions
+    // (הודעות לא-נקראות מוזכרות שם בקצרה כשהוא מתקשר) - למנהל אין ערוץ טלפון מקביל (הוא לא מתקשר
+    // לשלוחה), כך שעבורו רק אתר+מייל.
     if (ctx.user.role === "worker") {
-      const branch = db.prepare("SELECT name FROM branches WHERE id = ?").get(ctx.params.branchId);
-      const worker = db.prepare("SELECT full_name FROM users WHERE id = ?").get(ctx.params.workerId);
       createNotification("new_chat_message", Number(info.lastInsertRowid), `הודעה חדשה מ-${worker.full_name} (${branch.name})`);
+      const admins = db.prepare("SELECT email FROM users WHERE role = 'admin' AND email IS NOT NULL AND active = 1").all();
+      for (const admin of admins) {
+        sendEmail({ to: admin.email, subject: `הודעת צ'אט חדשה - ${branch.name}`, body: `${worker.full_name} כתב/ה ב-${branch.name}:\n\n${text.trim()}` })
+          .catch((e) => console.error("שליחת מייל צ'אט (עובד->מנהל) נכשלה:", e.message));
+      }
+    } else if (worker.email) {
+      sendEmail({ to: worker.email, subject: `הודעה חדשה - ${branch.name}`, body: `הודעה חדשה מהמנהל לגבי ${branch.name}:\n\n${text.trim()}` })
+        .catch((e) => console.error("שליחת מייל צ'אט (מנהל->עובד) נכשלה:", e.message));
     }
     return json(ctx.res, 201, { id: Number(info.lastInsertRowid) });
   }));

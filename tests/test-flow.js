@@ -80,7 +80,12 @@ async function main() {
   const chatSend = await call(`/api/chat/${branchId}/${workerId}`, { method: "POST", token: workerToken, body: { text: "שלום, סיימתי" } });
   ok(chatSend.status === 201, "עובד שולח הודעת צ'אט");
   const chatRead = await call(`/api/chat/${branchId}/${workerId}`, { token: adminToken });
-  ok(chatRead.status === 200 && chatRead.data.messages.length === 1, "מנהל רואה את הודעת הצ'אט");
+  // 2 הודעות: ההוראה שנוצרה אוטומטית כהודעת צ'אט (ר' routes/instructions.js) + ההודעה שהעובד כתב עכשיו
+  ok(chatRead.status === 200 && chatRead.data.messages.length === 2 && chatRead.data.messages.some(m => m.text.includes("📋 הוראה")), "מנהל רואה גם את ההוראה וגם את הודעת הצ'אט של העובד");
+
+  // --- מנהל שולח הודעת צ'אט לעובד (כיוון הפוך) - נשלח מייל לעובד (MOCK), לא אמור לזרוק שגיאה ---
+  const adminChat = await call(`/api/chat/${branchId}/${workerId}`, { method: "POST", token: adminToken, body: { text: "תודה על העבודה!" } });
+  ok(adminChat.status === 201, "מנהל שולח הודעת צ'אט לעובד (עם שליחת מייל ברקע)");
 
   const ben = await call(`/api/branches/${branchId}/beneficiaries`, { method: "POST", token: adminToken, body: {
     name: "מוטב בדיקה", monthlyAmount: 500,
@@ -143,6 +148,14 @@ async function main() {
   ok(yemotBlocked.status === 200 && !yemotBlocked.text.includes("קוד הזיהוי") && !yemotBlocked.text.includes("שולחן העבודה"), "מספר לא רשום נחסם בשקט, בלי לגלות שהשלוחה קיימת");
   const yemotAllowed = await callRaw("/yemot/instructions", { ApiCallId: "test-call-3", ApiPhone: "050-111-2222" });
   ok(yemotAllowed.status === 200 && yemotAllowed.text.includes("קוד הזיהוי"), "מספר רשום (גם עם מקפים) עובר וממשיך לבקשת קוד");
+
+  // --- ממשיכים את השיחה: מקישים PIN נכון (1234), מסרבים לדיווח יזום, ובודקים שההודעה הסופית
+  //     מזכירה את 2 הודעות הצ'אט הלא-נקראות (ההוראה שהמנהל יצר + "תודה על העבודה!") ---
+  const yemotPin = await callRaw("/yemot/instructions", { ApiCallId: "test-call-3", ApiPhone: "050-111-2222", speech: "1234" });
+  ok(yemotPin.status === 200 && yemotPin.text.includes("אין הוראות ממתינות"), "PIN נכון מזהה את העובד, אין הוראות ממתינות (כבר טופלה)");
+  const yemotDecline = await callRaw("/yemot/instructions", { ApiCallId: "test-call-3", ApiPhone: "050-111-2222", speech: "9" });
+  // הערה: sanitizeForYemot (services/yemot.js) מסירה אפוסטרופים מהטקסט המושמע - "צ'אט" הופך ל"צאט"
+  ok(yemotDecline.status === 200 && yemotDecline.text.includes("2 הודעות חדשות בצאט"), "השיחה הטלפונית מזכירה בסיום את מספר הודעות הצ'אט הלא-נקראות");
 
   // --- תפריט ראשי משותף (שלוחה 1): מבקש ספרה, ואז מפנה לשלוחה הנכונה ---
   const menuStart = await callRaw("/yemot/main-menu", { ApiCallId: "test-call-menu-1" });
