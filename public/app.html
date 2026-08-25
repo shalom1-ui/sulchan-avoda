@@ -1,11 +1,15 @@
 <meta charset="utf-8">
 <title>שולחן עבודה - ניהול</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='100%25' x2='100%25' y2='0%25'%3E%3Cstop offset='0%25' stop-color='%237ba63f'/%3E%3Cstop offset='40%25' stop-color='%231f8f7a'/%3E%3Cstop offset='70%25' stop-color='%235b4a86'/%3E%3Cstop offset='100%25' stop-color='%239c2b5e'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect x='4' y='6' width='56' height='40' rx='7' fill='url(%23g)'/%3E%3Crect x='9' y='11' width='46' height='30' rx='4' fill='white'/%3E%3Ctext x='32' y='31' font-family='Arial,sans-serif' font-weight='800' font-size='15' text-anchor='middle' fill='%235b4a86'%3Eשע%3C/text%3E%3Crect x='26' y='46' width='12' height='7' fill='url(%23g)'/%3E%3Crect x='16' y='55' width='32' height='4' rx='2' fill='url(%23g)'/%3E%3C/svg%3E">
+
 <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#12161d; --surface:#1a2029; --surface-2:#212836; --line:#2b3242;
     --text:#eef0f4; --muted:#8c94a6; --accent:#2fb08d; --accent-soft:#1f6a56;
     --warn:#e8a33d; --danger:#d9614f; --radius:14px;
+    /* צבעי הלוגו של העמותה - גרדיאנט ירוק->טורקיז->סגול->מג'נטה, כמו בקובץ הלוגו שהתקבל */
+    --logo-green:#7ba63f; --logo-teal:#1f8f7a; --logo-purple:#5b4a86; --logo-magenta:#9c2b5e;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;background:var(--bg);color:var(--text);}
@@ -34,11 +38,36 @@
   .badge.pending{background:rgba(232,163,61,.15);color:var(--warn);}
   .badge.done{background:rgba(47,176,141,.15);color:var(--accent);}
   .badge.not_done,.badge.issue{background:rgba(217,97,79,.15);color:var(--danger);}
-  #loginScreen{display:flex;align-items:center;justify-content:center;min-height:100vh;}
-  #loginBox{width:100%;max-width:360px;}
+  /* רקע גרדיאנט עדין שזז לאט - למסך הכניסה ולכותרת הקבועה (ר' בקשת המשתמש ללוגו+רקע מתחלף) */
+  @keyframes gradientDrift{0%{background-position:0% 50%;}50%{background-position:100% 50%;}100%{background-position:0% 50%;}}
+  #loginScreen{
+    display:flex;align-items:center;justify-content:center;min-height:100vh;
+    background:linear-gradient(120deg,#12161d,#17222a,#1c1a2e,#182a22,#12161d);
+    background-size:400% 400%;animation:gradientDrift 26s ease infinite;
+  }
+  #loginBox{width:100%;max-width:380px;}
   #appShell{display:none;}
-  header{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:0;z-index:5;}
+  header{
+    display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--line);
+    background:linear-gradient(100deg,var(--surface),#1b2432,#221c30,var(--surface));
+    background-size:300% 300%;animation:gradientDrift 34s ease infinite;
+    position:sticky;top:0;z-index:5;
+  }
   header .title{font-weight:800;font-size:17px;}
+  /* ---- לוגו העמותה: "מסך" עם גרדיאנט (ירוק->טורקיז->סגול->מג'נטה), כמו קובץ הלוגו שהתקבל ---- */
+  .logo-monitor{display:inline-flex;border-radius:14px;padding:5px;flex-shrink:0;
+    background:linear-gradient(135deg,var(--logo-green),var(--logo-teal) 40%,var(--logo-purple) 70%,var(--logo-magenta));}
+  .logo-monitor-inner{background:#fff;border-radius:9px;text-align:center;padding:6px 10px;}
+  .logo-text{font-weight:800;line-height:1.08;white-space:nowrap;
+    background:linear-gradient(135deg,var(--logo-green),var(--logo-teal) 40%,var(--logo-purple) 70%,var(--logo-magenta));
+    -webkit-background-clip:text;background-clip:text;color:transparent;}
+  .logo-sub{color:var(--logo-teal);margin-top:2px;white-space:nowrap;}
+  .logo-stand{width:24px;height:12px;margin:3px auto 0;
+    background:linear-gradient(135deg,var(--logo-green),var(--logo-teal));
+    clip-path:polygon(35% 0,65% 0,100% 100%,0% 100%);}
+  .logo-base{width:44px;height:4px;margin:0 auto;border-radius:2px;
+    background:linear-gradient(90deg,var(--logo-green),var(--logo-purple));}
+  .logo-row{display:flex;align-items:center;gap:10px;}
   nav{display:flex;gap:6px;padding:10px 24px;overflow-x:auto;background:var(--surface);border-bottom:1px solid var(--line);}
   nav button{background:transparent;color:var(--muted);border:1px solid transparent;white-space:nowrap;}
   nav button.active{background:var(--surface-2);color:var(--accent);border-color:var(--accent-soft);}
@@ -64,8 +93,17 @@
 
 <div id="loginScreen">
   <div id="loginBox" class="card">
-    <div style="font-weight:800;font-size:20px;margin-bottom:4px;">שולחן עבודה</div>
-    <div class="muted" style="margin-bottom:18px;" id="loginSubtitle">כניסה למערכת ניהול</div>
+    <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:14px;">
+      <div class="logo-monitor">
+        <div class="logo-monitor-inner" style="padding:16px 24px;">
+          <div class="logo-text" style="font-size:26px;">שולחן<br>עבודה</div>
+          <div class="logo-sub" style="font-size:11px;">מרחב עבודה איכותי בהוצאה כשרה</div>
+        </div>
+      </div>
+      <div class="logo-stand"></div>
+      <div class="logo-base"></div>
+    </div>
+    <div class="muted" style="margin-bottom:18px;text-align:center;" id="loginSubtitle">כניסה למערכת ניהול</div>
     <div id="loginFormArea">
       <div class="row" style="flex-direction:column;align-items:stretch;gap:12px;">
         <input id="loginUsername" placeholder="שם משתמש" autocomplete="username">
@@ -81,7 +119,14 @@
 
 <div id="appShell">
   <header>
-    <div class="title">שולחן עבודה - ניהול</div>
+    <div class="logo-row">
+      <div class="logo-monitor" style="padding:3px;">
+        <div class="logo-monitor-inner" style="padding:3px 8px;">
+          <div class="logo-text" style="font-size:12.5px;">שולחן עבודה</div>
+        </div>
+      </div>
+      <div class="title">שולחן עבודה - ניהול</div>
+    </div>
     <div class="row">
       <div class="bell" id="bellIcon" onclick="toggleNotifPanel()">🔔<span class="dot" id="bellDot" style="display:none;">0</span></div>
       <span class="muted" id="whoAmI"></span>
