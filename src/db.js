@@ -85,6 +85,7 @@ db.exec(`
     voice_note_path TEXT,               -- נתיב קובץ הקלטה קולית אם הגיע מהטלפון (עתידי - ר' README)
     source TEXT NOT NULL DEFAULT 'web',  -- 'web' | 'phone'
     read_by_admin INTEGER NOT NULL DEFAULT 0,
+    needs_followup INTEGER NOT NULL DEFAULT 0, -- "לטיפול המשך" - דגל שהמנהל מסמן/מבטל ידנית, בנפרד מסטטוס הדיווח עצמו
     created_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -173,6 +174,7 @@ for (const alterSql of [
   "ALTER TABLE transactions ADD COLUMN payment_method TEXT",
   "ALTER TABLE transactions ADD COLUMN document_id INTEGER REFERENCES documents(id)",
   "ALTER TABLE beneficiaries ADD COLUMN category TEXT NOT NULL DEFAULT 'salary'",
+  "ALTER TABLE reports ADD COLUMN needs_followup INTEGER NOT NULL DEFAULT 0",
 ]) {
   try {
     db.exec(alterSql);

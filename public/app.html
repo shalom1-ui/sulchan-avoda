@@ -382,13 +382,27 @@ async function sendInstruction() {
 async function renderReports() {
   const main = document.getElementById("mainArea");
   const data = await api("/api/reports");
-  main.innerHTML = `<div class="card"><table><thead><tr><th>סניף</th><th>עובד</th><th>הוראה</th><th>סטטוס</th><th>הערה</th><th>מקור</th><th>מתי</th></tr></thead>
-    <tbody>${data.reports.map(r => `<tr><td>${esc(r.branch_name)}</td><td>${esc(r.worker_name)}</td>
+  main.innerHTML = `<div class="card"><table><thead><tr><th>סניף</th><th>עובד</th><th>הוראה</th><th>סטטוס</th><th>הערה</th><th>מקור</th><th>מתי</th><th>טיפול המשך</th><th></th></tr></thead>
+    <tbody>${data.reports.map(r => `<tr id="reportRow_${r.id}"><td>${esc(r.branch_name)}</td><td>${esc(r.worker_name)}</td>
       <td class="muted">${esc(r.instruction_text || "-")}</td>
       <td><span class="badge ${r.status_code}">${statusLabel(r.status_code)}</span></td>
       <td>${esc(r.note_text || "-")}</td><td class="muted">${r.source === "phone" ? "טלפון" : "אתר"}</td>
-      <td class="muted">${fmtDate(r.created_at)}</td></tr>`).join("") || "<tr><td colspan='7' class='muted'>אין דיווחים עדיין</td></tr>"}
+      <td class="muted">${fmtDate(r.created_at)}</td>
+      <td>${r.needs_followup
+        ? `<button class="danger" onclick="toggleFollowup(${r.id}, false)">🔴 לטיפול</button>`
+        : `<button class="secondary" onclick="toggleFollowup(${r.id}, true)">סמן לטיפול</button>`}</td>
+      <td><button class="danger" onclick="deleteReport(${r.id})">מחיקה</button></td>
+    </tr>`).join("") || "<tr><td colspan='9' class='muted'>אין דיווחים עדיין</td></tr>"}
     </tbody></table></div>`;
+}
+async function toggleFollowup(id, needsFollowup) {
+  await api(`/api/reports/${id}/followup`, { method: "PUT", body: { needsFollowup } });
+  renderReports();
+}
+async function deleteReport(id) {
+  if (!confirm("למחוק את הדיווח?")) return;
+  await api("/api/reports/" + id, { method: "DELETE" });
+  renderReports();
 }
 
 // ---------- משתמשים (מנהל) ----------
@@ -412,11 +426,19 @@ async function renderUsers() {
       <div id="userStatus" class="status-line"></div>
     </div>
     <div class="card"><table><thead><tr><th>שם</th><th>שם משתמש</th><th>תפקיד</th><th>טלפון</th><th>מייל</th><th>סניפים</th><th></th></tr></thead>
-    <tbody>${data.users.filter(u => u.active).map(u => `<tr><td>${esc(u.full_name)}</td><td class="muted">${esc(u.username)}</td>
+    <tbody>${data.users.filter(u => u.active).map(u => `<tr><td>${esc(u.full_name)}
+        <button class="secondary" style="padding:2px 8px;font-size:11.5px;margin-inline-start:6px;" onclick="editUserName(${u.id}, '${esc(u.full_name).replace(/'/g,"\\'")}')">✎</button></td>
+      <td class="muted">${esc(u.username)}</td>
       <td>${u.role === "admin" ? "מנהל" : "עובד"}</td><td>${esc(u.phone||"-")}</td><td>${esc(u.email||"-")}</td>
       <td>${u.role === "worker" ? `<button class="secondary" onclick="openWorkerBranches(${u.id}, '${esc(u.full_name).replace(/'/g,"\\'")}')">שיוך סניפים</button>` : "-"}</td>
       <td><button class="danger" onclick="deleteUser(${u.id}, '${esc(u.full_name).replace(/'/g,"\\'")}')">מחיקה</button></td>
     </tr>`).join("")}</tbody></table></div>`;
+}
+async function editUserName(id, currentName) {
+  const newName = prompt("שם מלא חדש:", currentName);
+  if (newName === null || !newName.trim()) return;
+  await api(`/api/users/${id}`, { method: "PUT", body: { fullName: newName.trim() } });
+  renderUsers();
 }
 async function deleteUser(id, fullName) {
   if (!confirm(`למחוק את ${fullName}? (ניתן ליצור מחדש בעתיד, אך לא לשחזר את אותו חשבון)`)) return;
@@ -530,7 +552,8 @@ async function openAdminChat(peerId) {
   area.innerHTML = `<div class="card">
     <div id="adminChatMessages" style="max-height:400px;overflow-y:auto;display:flex;flex-direction:column;margin-bottom:12px;">
       ${data.messages.map(m => `<div class="msg ${m.sender_user_id === ME.id ? 'mine' : 'theirs'}">
-        ${esc(m.text)}<div class="meta">${esc(m.sender_name)} · ${fmtDate(m.created_at)}</div></div>`).join("") || "<div class='muted'>אין הודעות עדיין</div>"}
+        ${esc(m.text)}<div class="meta">${esc(m.sender_name)} · ${fmtDate(m.created_at)}
+          <span style="cursor:pointer;margin-inline-start:6px;" onclick="deleteAdminChatMessage(${m.id}, ${peerId})">🗑️</span></div></div>`).join("") || "<div class='muted'>אין הודעות עדיין</div>"}
     </div>
     <div class="row"><input id="adminChatInput" placeholder="הודעה..." style="flex:1;" onkeydown="if(event.key==='Enter')sendAdminChat(${peerId})">
       <button onclick="sendAdminChat(${peerId})">שליחה</button></div>
@@ -543,6 +566,11 @@ async function sendAdminChat(peerId) {
   if (!text) return;
   await api(`/api/admin-chat/${peerId}`, { method: "POST", body: { text } });
   input.value = "";
+  openAdminChat(peerId);
+}
+async function deleteAdminChatMessage(id, peerId) {
+  if (!confirm("למחוק את ההודעה?")) return;
+  await api("/api/admin-chat/message/" + id, { method: "DELETE" });
   openAdminChat(peerId);
 }
 async function loadWorkerBranchesForNewChat() {
@@ -567,12 +595,18 @@ async function openChat(branchId, workerId) {
   area.innerHTML = `<div class="card">
     <div id="chatMessages" style="max-height:400px;overflow-y:auto;display:flex;flex-direction:column;margin-bottom:12px;">
       ${data.messages.map(m => `<div class="msg ${m.sender_user_id === ME.id ? 'mine' : 'theirs'}">
-        ${esc(m.text)}<div class="meta">${esc(m.sender_name)} · ${fmtDate(m.created_at)}</div></div>`).join("") || "<div class='muted'>אין הודעות עדיין</div>"}
+        ${esc(m.text)}<div class="meta">${esc(m.sender_name)} · ${fmtDate(m.created_at)}
+          ${ME.role === "admin" || m.sender_user_id === ME.id ? `<span style="cursor:pointer;margin-inline-start:6px;" onclick="deleteChatMessage(${m.id}, ${branchId}, ${workerId})">🗑️</span>` : ""}</div></div>`).join("") || "<div class='muted'>אין הודעות עדיין</div>"}
     </div>
     <div class="row"><input id="chatInput" placeholder="הודעה..." style="flex:1;" onkeydown="if(event.key==='Enter')sendChat(${branchId},${workerId})">
       <button onclick="sendChat(${branchId},${workerId})">שליחה</button></div>
   </div>`;
   area.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+async function deleteChatMessage(id, branchId, workerId) {
+  if (!confirm("למחוק את ההודעה?")) return;
+  await api("/api/chat/message/" + id, { method: "DELETE" });
+  openChat(branchId, workerId);
 }
 async function sendChat(branchId, workerId) {
   const input = document.getElementById("chatInput");

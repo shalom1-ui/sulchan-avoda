@@ -58,6 +58,17 @@ function register(router) {
     }
     return json(ctx.res, 201, { id: Number(info.lastInsertRowid) });
   }));
+
+  // מחיקת הודעה - כל מנהל יכול למחוק כל הודעה בצ'אט המנהלים (שני הצדדים הם מנהלים באותה מידה).
+  router.delete("/api/admin-chat/message/:id", requireAdmin(async (ctx) => {
+    const msg = db.prepare("SELECT * FROM admin_chat_messages WHERE id = ?").get(ctx.params.id);
+    if (!msg) return json(ctx.res, 404, { error: "הודעה לא נמצאה" });
+    if (msg.sender_user_id !== ctx.user.userId && msg.recipient_user_id !== ctx.user.userId) {
+      return json(ctx.res, 403, { error: "אין הרשאה" });
+    }
+    db.prepare("DELETE FROM admin_chat_messages WHERE id = ?").run(ctx.params.id);
+    return json(ctx.res, 200, { ok: true });
+  }));
 }
 
 module.exports = { register };

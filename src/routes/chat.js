@@ -71,6 +71,17 @@ function register(router) {
     }
     return json(ctx.res, 201, { id: Number(info.lastInsertRowid) });
   }));
+
+  // מחיקת הודעת צ'אט - מנהל יכול למחוק כל הודעה בשרשור; עובד יכול למחוק רק הודעה ששלח בעצמו.
+  router.delete("/api/chat/message/:id", requireAuth(async (ctx) => {
+    const msg = db.prepare("SELECT * FROM chat_messages WHERE id = ?").get(ctx.params.id);
+    if (!msg) return json(ctx.res, 404, { error: "הודעה לא נמצאה" });
+    if (ctx.user.role !== "admin" && Number(ctx.user.userId) !== msg.sender_user_id) {
+      return json(ctx.res, 403, { error: "אין הרשאה למחוק הודעה זו" });
+    }
+    db.prepare("DELETE FROM chat_messages WHERE id = ?").run(ctx.params.id);
+    return json(ctx.res, 200, { ok: true });
+  }));
 }
 
 module.exports = { register };

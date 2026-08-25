@@ -66,6 +66,12 @@ async function main() {
   ok(workerLogin.status === 200 && workerLogin.data.user.role === "worker", "עובד מתחבר בהצלחה");
   const workerToken = workerLogin.data.token;
 
+  // --- שינוי שם תצוגה (למשל "עובד בדיקה" -> שם אמיתי) ---
+  const renameWorker = await call(`/api/users/${workerId}`, { method: "PUT", token: adminToken, body: { fullName: "שלום כהן" } });
+  ok(renameWorker.status === 200, "שינוי שם מלא של משתמש עובד");
+  const usersAfterRename = await call("/api/users", { token: adminToken });
+  ok(usersAfterRename.data.users.find(u => u.id === workerId).full_name === "שלום כהן", "השם החדש נשמר ומוחזר נכון");
+
   const instr = await call("/api/instructions", { method: "POST", token: adminToken, body: {
     branchId, workerUserId: workerId, text: "לנקות את עמדות המחשב",
   }});
@@ -91,6 +97,21 @@ async function main() {
   // --- מנהל שולח הודעת צ'אט לעובד (כיוון הפוך) - נשלח מייל לעובד (MOCK), לא אמור לזרוק שגיאה ---
   const adminChat = await call(`/api/chat/${branchId}/${workerId}`, { method: "POST", token: adminToken, body: { text: "תודה על העבודה!" } });
   ok(adminChat.status === 201, "מנהל שולח הודעת צ'אט לעובד (עם שליחת מייל ברקע)");
+
+  // --- מחיקת הודעת צ'אט: עובד לא יכול למחוק הודעה של המנהל, מנהל כן יכול ---
+  const workerDeleteAdminMsg = await call(`/api/chat/message/${adminChat.data.id}`, { method: "DELETE", token: workerToken });
+  ok(workerDeleteAdminMsg.status === 403, "עובד לא יכול למחוק הודעה ששלח המנהל");
+  const adminDeleteOwnMsg = await call(`/api/chat/message/${adminChat.data.id}`, { method: "DELETE", token: adminToken });
+  ok(adminDeleteOwnMsg.status === 200, "מנהל יכול למחוק הודעת צ'אט");
+
+  // --- "לטיפול המשך" + מחיקת דיווח ---
+  const followupOn = await call(`/api/reports/${report.data.id}/followup`, { method: "PUT", token: adminToken, body: { needsFollowup: true } });
+  ok(followupOn.status === 200, "סימון דיווח כ'לטיפול המשך' עובד");
+  const reportsAfterFollowup = await call("/api/reports", { token: adminToken });
+  const flaggedReport = reportsAfterFollowup.data.reports.find(r => r.id === report.data.id);
+  ok(flaggedReport && flaggedReport.needs_followup === 1, "הדגל 'לטיפול המשך' נשמר ומוחזר נכון");
+  const deleteReportRes = await call(`/api/reports/${report.data.id}`, { method: "DELETE", token: adminToken });
+  ok(deleteReportRes.status === 200, "מחיקת דיווח עובדת");
 
   // --- צ'אט בין מנהלים (admin1 <-> admin2), נפרד מהצ'אט לפי סניף ---
   const peers = await call("/api/admin-chat/peers", { token: adminToken });
@@ -189,8 +210,9 @@ async function main() {
   const yemotPin = await callRaw("/yemot/instructions", { ApiCallId: "test-call-3", ApiPhone: "050-111-2222", speech: "1234" });
   ok(yemotPin.status === 200 && yemotPin.text.includes("אין הוראות ממתינות"), "PIN נכון מזהה את העובד, אין הוראות ממתינות (כבר טופלה)");
   const yemotDecline = await callRaw("/yemot/instructions", { ApiCallId: "test-call-3", ApiPhone: "050-111-2222", speech: "9" });
-  // הערה: sanitizeForYemot (services/yemot.js) מסירה אפוסטרופים מהטקסט המושמע - "צ'אט" הופך ל"צאט"
-  ok(yemotDecline.status === 200 && yemotDecline.text.includes("2 הודעות חדשות בצאט"), "השיחה הטלפונית מזכירה בסיום את מספר הודעות הצ'אט הלא-נקראות");
+  // הערה: sanitizeForYemot (services/yemot.js) מסירה אפוסטרופים מהטקסט המושמע - "צ'אט" הופך ל"צאט".
+  // רק הודעה אחת לא-נקראה בשלב הזה (הודעת המנהל השנייה נמחקה בבדיקת מחיקת-הודעות למעלה).
+  ok(yemotDecline.status === 200 && yemotDecline.text.includes("1 הודעות חדשות בצאט"), "השיחה הטלפונית מזכירה בסיום את מספר הודעות הצ'אט הלא-נקראות");
 
   // --- תפריט ראשי משותף (שלוחה 1): מבקש ספרה, ואז מפנה לשלוחה הנכונה ---
   const menuStart = await callRaw("/yemot/main-menu", { ApiCallId: "test-call-menu-1" });

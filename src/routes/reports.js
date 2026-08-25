@@ -71,6 +71,21 @@ function register(router) {
     db.prepare("UPDATE reports SET read_by_admin = 1 WHERE id = ?").run(ctx.params.id);
     return json(ctx.res, 200, { ok: true });
   }));
+
+  // "לטיפול המשך" - דגל שהמנהל מסמן/מבטל ידנית על דיווח, בנפרד מהסטטוס שהעובד דיווח (בוצע/לא בוצע/וכו').
+  router.put("/api/reports/:id/followup", requireAdmin(async (ctx) => {
+    const row = db.prepare("SELECT * FROM reports WHERE id = ?").get(ctx.params.id);
+    if (!row) return json(ctx.res, 404, { error: "דיווח לא נמצא" });
+    db.prepare("UPDATE reports SET needs_followup = ? WHERE id = ?").run(ctx.body.needsFollowup ? 1 : 0, ctx.params.id);
+    return json(ctx.res, 200, { ok: true });
+  }));
+
+  router.delete("/api/reports/:id", requireAdmin(async (ctx) => {
+    const row = db.prepare("SELECT * FROM reports WHERE id = ?").get(ctx.params.id);
+    if (!row) return json(ctx.res, 404, { error: "דיווח לא נמצא" });
+    db.prepare("DELETE FROM reports WHERE id = ?").run(ctx.params.id);
+    return json(ctx.res, 200, { ok: true });
+  }));
 }
 
 module.exports = { register, STATUS_LABELS };
