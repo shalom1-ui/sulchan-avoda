@@ -24,9 +24,9 @@ function register(router) {
     return json(ctx.res, 200, { instructions: rows });
   }));
 
-  // יוצר הוראה בודדת (סניף אחד + עובד אחד) - שולח מייל, ומוסיף גם לשרשור הצ'אט. שימוש פנימי בלבד
-  // (ר' POST /api/instructions למטה, שיכול ליצור כמה הוראות כאלה בבת אחת - "לכולם"/"כל הסניפים").
-  async function createOneInstruction(branchId, worker, branch, text, createdByUserId) {
+  // יוצר רשומת הוראה בודדת (סניף אחד + עובד אחד) במסד הנתונים + מוסיף לשרשור הצ'אט - בלי לשלוח מייל
+  // (המייל נשלח מרוכז לכל העובד אחרי שכל ההוראות שלו נוצרו - ר' POST /api/instructions למטה).
+  function createOneInstruction(branchId, worker, text, createdByUserId) {
     const info = db.prepare(
       "INSERT INTO instructions (branch_id, worker_user_id, created_by, text) VALUES (?, ?, ?, ?)"
     ).run(branchId, worker.id, createdByUserId, text);
@@ -38,25 +38,13 @@ function register(router) {
       "INSERT INTO chat_messages (branch_id, worker_user_id, sender_user_id, text) VALUES (?, ?, ?, ?)"
     ).run(branchId, worker.id, createdByUserId, `📋 הוראה: ${text}`);
 
-    let emailSent = false;
-    if (worker.email) {
-      try {
-        await sendEmail({
-          to: worker.email,
-          subject: `הוראה חדשה - ${branch.name}`,
-          body: `שלום ${worker.full_name},\n\nהוראה חדשה עבור ${branch.name}:\n\n${text}\n\nניתן גם לשמוע את ההוראה ולדווח דרך שלוחת הטלפון, או להתחבר לאתר.`,
-        });
-        emailSent = true;
-        db.prepare("UPDATE instructions SET email_sent = 1 WHERE id = ?").run(instructionId);
-      } catch (e) {
-        console.error("שליחת מייל הוראה נכשלה:", e.message);
-      }
-    }
-    return { id: instructionId, emailSent };
+    return instructionId;
   }
 
   // תומך גם בהוראה בודדת (branchId+workerUserId, כמו קודם) וגם ב"לכולם"/"כל הסניפים": שולחים
-  // branchIds[] ו/או workerUserIds[] - נוצרת הוראה נפרדת (ומייל נפרד) לכל צירוף (עובד × סניף).
+  // branchIds[] ו/או workerUserIds[] - נוצרת רשומת הוראה נפרדת לכל צירוף (עובד × סניף) לצורך מעקב
+  // סטטוס/הקראה בטלפון, אבל לכל עובד נשלח **מייל אחד מרוכז** שמפרט את כל הסניפים ברשימה - לא מייל
+  // נפרד לכל סניף (ר' משוב המשתמש: "מייל אחד ושיהיה כתוב רשימה של הסניפים").
   router.post("/api/instructions", requireAdmin(async (ctx) => {
     const { branchId, workerUserId, branchIds, workerUserIds, text } = ctx.body;
     const branchIdList = Array.isArray(branchIds) && branchIds.length ? branchIds : (branchId ? [branchId] : []);
@@ -69,22 +57,47 @@ function register(router) {
     }
 
     const trimmedText = text.trim();
-    const created = [];
+    let createdCount = 0;
+    let emailsSent = 0;
+    let firstInstructionId = null;
+
     for (const wId of workerIdList) {
       const worker = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'worker'").get(wId);
       if (!worker) continue;
+
+      const instructionIds = [];
+      const branchNames = [];
       for (const bId of branchIdList) {
         const branch = db.prepare("SELECT * FROM branches WHERE id = ?").get(bId);
         if (!branch) continue;
-        created.push(await createOneInstruction(bId, worker, branch, trimmedText, ctx.user.userId));
+        const instructionId = createOneInstruction(bId, worker, trimmedText, ctx.user.userId);
+        instructionIds.push(instructionId);
+        branchNames.push(branch.name);
+        createdCount++;
+        if (firstInstructionId === null) firstInstructionId = instructionId;
+      }
+      if (!instructionIds.length) continue;
+
+      if (worker.email) {
+        try {
+          const branchList = branchNames.map((n) => `- ${n}`).join("\n");
+          await sendEmail({
+            to: worker.email,
+            subject: branchNames.length === 1 ? `הוראה חדשה - ${branchNames[0]}` : `הוראה חדשה - ${branchNames.length} סניפים`,
+            body: `שלום ${worker.full_name},\n\nהוראה חדשה עבור ${branchNames.length === 1 ? "הסניף הבא" : "הסניפים הבאים"}:\n${branchList}\n\nתוכן ההוראה:\n${trimmedText}\n\nניתן גם לשמוע את ההוראה ולדווח דרך שלוחת הטלפון, או להתחבר לאתר.`,
+          });
+          db.prepare(`UPDATE instructions SET email_sent = 1 WHERE id IN (${instructionIds.map(() => "?").join(",")})`).run(...instructionIds);
+          emailsSent += instructionIds.length;
+        } catch (e) {
+          console.error("שליחת מייל הוראה מרוכז נכשלה:", e.message);
+        }
       }
     }
-    if (!created.length) return json(ctx.res, 404, { error: "לא נמצאו עובדים/סניפים תקינים" });
+    if (!createdCount) return json(ctx.res, 404, { error: "לא נמצאו עובדים/סניפים תקינים" });
 
-    const emailsSent = created.filter((c) => c.emailSent).length;
     return json(ctx.res, 201, {
-      id: created[0].id, emailSent: created[0].emailSent, // תאימות לאחור לגרסה הישנה (הוראה בודדת)
-      created: created.length, emailsSent,
+      id: firstInstructionId, emailSent: emailsSent > 0, // תאימות לאחור לגרסה הישנה (הוראה בודדת)
+      created: createdCount, emailsSent,
     });
   }));
 

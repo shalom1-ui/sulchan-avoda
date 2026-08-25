@@ -218,7 +218,7 @@ async function main() {
   // --- הוראה ל"כולם"/"כל הסניפים": יוצרים עובד שני, ובודקים שהוראה עם branchIds+workerUserIds
   //     יוצרת הוראה נפרדת לכל צירוף (עובד × סניף) ---
   const worker2 = await call("/api/users", { method: "POST", token: adminToken, body: {
-    fullName: "עובד שני", username: "worker2", pin: "5678", role: "worker",
+    fullName: "עובד שני", username: "worker2", pin: "5678", role: "worker", email: "worker2@example.com",
   }});
   ok(worker2.status === 201, "נוצר עובד שני לבדיקת שידור לכולם");
   // בכוונה לא כוללים כאן את workerId המקורי - יש לו כבר בדיקות pending-instructions ייעודיות
@@ -228,6 +228,22 @@ async function main() {
     branchIds: [branchId, secondBranchId], workerUserIds: [worker2.data.id], text: "בדיקת שיבוץ לכולם",
   }});
   ok(broadcast.status === 201 && broadcast.data.created === 2, "הוראה ל-1 עובד × 2 סניפים יוצרת 2 הוראות בבת אחת");
+
+  // --- "בחר הכל" בצ'אט: הודעה חדשה ל-1 עובד × 2 סניפים יוצרת 2 הודעות צ'אט (שרשור נפרד לכל סניף),
+  //     אבל מייל מרוכז אחד בלבד (לא מייל נפרד לכל סניף) ---
+  const chatBroadcast = await call("/api/chat/bulk", { method: "POST", token: adminToken, body: {
+    branchIds: [branchId, secondBranchId], workerUserIds: [worker2.data.id], text: "בדיקת בחר הכל בצאט",
+  }});
+  ok(chatBroadcast.status === 201 && chatBroadcast.data.created === 2 && chatBroadcast.data.emailsSent === 1,
+    "'בחר הכל' בצ'אט יוצר 2 הודעות אבל שולח מייל מרוכז אחד בלבד");
+  const chatThread1 = await call(`/api/chat/${branchId}/${worker2.data.id}`, { token: adminToken });
+  const chatThread2 = await call(`/api/chat/${secondBranchId}/${worker2.data.id}`, { token: adminToken });
+  ok(chatThread1.data.messages.some(m => m.text === "בדיקת בחר הכל בצאט") && chatThread2.data.messages.some(m => m.text === "בדיקת בחר הכל בצאט"),
+    "הודעת הצ'אט המרוכזת מופיעה בשני השרשורים (לפי סניף)");
+  const workerCantBulk = await call("/api/chat/bulk", { method: "POST", token: workerToken, body: {
+    branchIds: [branchId], workerUserIds: [worker2.data.id], text: "נסיון לא מורשה",
+  }});
+  ok(workerCantBulk.status === 403, "עובד לא יכול לשלוח הודעת צ'אט מרוכזת (מוגבל למנהלים)");
 
   // --- עדכון קטגוריה (טקסט חופשי) לתנועה קיימת ---
   const txId = tx.data.transaction.id;

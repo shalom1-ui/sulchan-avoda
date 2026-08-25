@@ -669,14 +669,29 @@ async function renderChatThreads() {
 
     <div style="font-weight:800;font-size:16px;margin:20px 0 8px;">צ'אט עם עובדים</div>
     <div class="card">
-      <div style="font-weight:700;margin-bottom:10px;">שיחה חדשה</div>
-      <div class="row">
-        <select id="newChatWorker" style="flex:1;" onchange="loadWorkerBranchesForNewChat()">
-          <option value="">- בחרו עובד -</option>${workers.map(w => `<option value="${w.id}">${esc(w.full_name)}</option>`).join("")}
-        </select>
-        <select id="newChatBranch" style="flex:1;"><option value="">- קודם בחרו עובד -</option></select>
-        <button onclick="startNewChat()">התחלה</button>
+      <div style="font-weight:700;margin-bottom:10px;">שיחה חדשה / הודעה חדשה</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:10px;">
+        <div>
+          <div class="row" style="justify-content:space-between;margin-bottom:6px;">
+            <span class="muted" style="font-size:12.5px;">סניפים</span>
+            <button class="secondary" style="padding:3px 10px;font-size:11.5px;" onclick="toggleAllCheckboxes('chatBranchList')">בחר הכל</button>
+          </div>
+          <div id="chatBranchList" style="max-height:180px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:8px;">
+            ${BRANCHES.map(b => `<label class="row" style="margin-bottom:4px;"><input type="checkbox" style="width:auto;" value="${b.id}"> ${esc(b.name)}</label>`).join("")}
+          </div>
+        </div>
+        <div>
+          <div class="row" style="justify-content:space-between;margin-bottom:6px;">
+            <span class="muted" style="font-size:12.5px;">עובדים</span>
+            <button class="secondary" style="padding:3px 10px;font-size:11.5px;" onclick="toggleAllCheckboxes('chatWorkerList')">בחר הכל (כולם)</button>
+          </div>
+          <div id="chatWorkerList" style="max-height:180px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:8px;">
+            ${workers.map(w => `<label class="row" style="margin-bottom:4px;"><input type="checkbox" style="width:auto;" value="${w.id}"> ${esc(w.full_name)}</label>`).join("") || "<span class='muted'>אין עובדים - הוסיפו בטאב משתמשים</span>"}
+          </div>
+        </div>
       </div>
+      <textarea id="newChatText" placeholder="תוכן ההודעה... (אותה הודעה תישלח לכל הצירופים שבחרתם)" rows="3"></textarea>
+      <div class="row" style="margin-top:8px;"><button onclick="startNewChat()" ${workers.length ? "" : "disabled"}>שליחה</button></div>
       <div id="newChatStatus" class="status-line"></div>
     </div>
     <div class="card"><table><thead><tr><th>סניף</th><th>עובד</th><th>הודעה אחרונה</th><th>לא נקראו</th><th></th></tr></thead>
@@ -717,21 +732,19 @@ async function deleteAdminChatMessage(id, peerId) {
   await api("/api/admin-chat/message/" + id, { method: "DELETE" });
   openAdminChat(peerId);
 }
-async function loadWorkerBranchesForNewChat() {
-  const workerId = document.getElementById("newChatWorker").value;
-  const branchSelect = document.getElementById("newChatBranch");
-  if (!workerId) { branchSelect.innerHTML = "<option value=''>- קודם בחרו עובד -</option>"; return; }
-  const data = await api(`/api/users/${workerId}/branches`);
-  branchSelect.innerHTML = data.branches.length
-    ? data.branches.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join("")
-    : "<option value=''>העובד לא משויך לאף סניף</option>";
-}
-function startNewChat() {
-  const workerId = document.getElementById("newChatWorker").value;
-  const branchId = document.getElementById("newChatBranch").value;
+async function startNewChat() {
+  const branchIds = Array.from(document.querySelectorAll("#chatBranchList input:checked")).map(b => Number(b.value));
+  const workerUserIds = Array.from(document.querySelectorAll("#chatWorkerList input:checked")).map(b => Number(b.value));
+  const text = document.getElementById("newChatText").value.trim();
   const statusEl = document.getElementById("newChatStatus");
-  if (!workerId || !branchId) { statusEl.textContent = "בחרו עובד וסניף"; statusEl.className = "status-line err"; return; }
-  openChat(Number(branchId), Number(workerId));
+  if (!branchIds.length || !workerUserIds.length) { statusEl.textContent = "בחרו לפחות סניף אחד ועובד אחד"; statusEl.className = "status-line err"; return; }
+  if (!text) { statusEl.textContent = "נא להזין תוכן הודעה"; statusEl.className = "status-line err"; return; }
+  try {
+    const res = await api("/api/chat/bulk", { method: "POST", body: { branchIds, workerUserIds, text } });
+    statusEl.textContent = `נשלחו ${res.created} הודעות (${res.emailsSent} מיילים מרוכזים נשלחו בהצלחה).`; statusEl.className = "status-line ok";
+    document.getElementById("newChatText").value = "";
+    renderChatThreads();
+  } catch (e) { statusEl.textContent = e.message; statusEl.className = "status-line err"; }
 }
 async function openChat(branchId, workerId) {
   const data = await api(`/api/chat/${branchId}/${workerId}`);

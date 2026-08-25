@@ -3,9 +3,18 @@
 "use strict";
 const db = require("../db");
 const { json } = require("../router");
-const { requireAuth } = require("../middleware/auth");
+const { requireAuth, requireAdmin } = require("../middleware/auth");
 const { createNotification } = require("../lib/notify");
 const { sendEmail } = require("../services/email");
+
+// יוצר רשומת הודעת צ'אט בודדת בשרשור (סניף, עובד) - בלי לשלוח מייל (המייל, כשצריך, נשלח בנפרד
+// ע"י הקורא - ר' POST /api/chat/:branchId/:workerId למטה ו-POST /api/chat/bulk).
+function insertChatMessage(branchId, workerId, senderUserId, text) {
+  const info = db.prepare(
+    "INSERT INTO chat_messages (branch_id, worker_user_id, sender_user_id, text) VALUES (?, ?, ?, ?)"
+  ).run(branchId, workerId, senderUserId, text);
+  return Number(info.lastInsertRowid);
+}
 
 function register(router) {
   // רשימת שרשורים (למנהל: כולם; לעובד: רק שלו)
@@ -47,9 +56,8 @@ function register(router) {
     }
     const { text } = ctx.body;
     if (!text || !text.trim()) return json(ctx.res, 400, { error: "הודעה ריקה" });
-    const info = db.prepare(
-      "INSERT INTO chat_messages (branch_id, worker_user_id, sender_user_id, text) VALUES (?, ?, ?, ?)"
-    ).run(ctx.params.branchId, ctx.params.workerId, ctx.user.userId, text.trim());
+    const newId = insertChatMessage(ctx.params.branchId, ctx.params.workerId, ctx.user.userId, text.trim());
+    const info = { lastInsertRowid: newId };
 
     const branch = db.prepare("SELECT name FROM branches WHERE id = ?").get(ctx.params.branchId);
     const worker = db.prepare("SELECT full_name, email FROM users WHERE id = ?").get(ctx.params.workerId);
@@ -70,6 +78,56 @@ function register(router) {
         .catch((e) => console.error("שליחת מייל צ'אט (מנהל->עובד) נכשלה:", e.message));
     }
     return json(ctx.res, 201, { id: Number(info.lastInsertRowid) });
+  }));
+
+  // שליחת הודעה חדשה לכמה עובדים/סניפים בבת אחת (מנהל בלבד) - "בחר הכל" בדיוק כמו בהוראות
+  // (ר' routes/instructions.js): נכתבת הודעת צ'אט נפרדת בכל שרשור (עובד, סניף) שנבחר, אבל לכל עובד
+  // נשלח מייל אחד מרוכז שמפרט את כל הסניפים ברשימה - לא מייל נפרד לכל סניף.
+  router.post("/api/chat/bulk", requireAdmin(async (ctx) => {
+    const { branchIds, workerUserIds, text } = ctx.body;
+    const branchIdList = Array.isArray(branchIds) ? branchIds : [];
+    const workerIdList = Array.isArray(workerUserIds) ? workerUserIds : [];
+    if (!branchIdList.length || !workerIdList.length || !text || !text.trim()) {
+      return json(ctx.res, 400, { error: "חסרים שדות חובה (סניף/סניפים, עובד/עובדים, תוכן ההודעה)" });
+    }
+    if (branchIdList.length * workerIdList.length > 200) {
+      return json(ctx.res, 400, { error: "יותר מדי צירופי עובד/סניף בבת אחת (הגבלה 200)" });
+    }
+
+    const trimmedText = text.trim();
+    let createdCount = 0;
+    let emailsSent = 0;
+
+    for (const wId of workerIdList) {
+      const worker = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'worker'").get(wId);
+      if (!worker) continue;
+
+      const branchNames = [];
+      for (const bId of branchIdList) {
+        const branch = db.prepare("SELECT name FROM branches WHERE id = ?").get(bId);
+        if (!branch) continue;
+        insertChatMessage(bId, worker.id, ctx.user.userId, trimmedText);
+        branchNames.push(branch.name);
+        createdCount++;
+      }
+      if (!branchNames.length) continue;
+
+      if (worker.email) {
+        try {
+          const branchList = branchNames.map((n) => `- ${n}`).join("\n");
+          await sendEmail({
+            to: worker.email,
+            subject: branchNames.length === 1 ? `הודעה חדשה - ${branchNames[0]}` : `הודעה חדשה - ${branchNames.length} סניפים`,
+            body: `הודעה חדשה מהמנהל עבור ${branchNames.length === 1 ? "הסניף הבא" : "הסניפים הבאים"}:\n${branchList}\n\n${trimmedText}`,
+          });
+          emailsSent++;
+        } catch (e) {
+          console.error("שליחת מייל צ'אט מרוכז נכשלה:", e.message);
+        }
+      }
+    }
+    if (!createdCount) return json(ctx.res, 404, { error: "לא נמצאו עובדים/סניפים תקינים" });
+    return json(ctx.res, 201, { created: createdCount, emailsSent });
   }));
 
   // מחיקת הודעת צ'אט - מנהל יכול למחוק כל הודעה בשרשור; עובד יכול למחוק רק הודעה ששלח בעצמו.
