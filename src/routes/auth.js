@@ -2,10 +2,75 @@
 "use strict";
 const db = require("../db");
 const { json } = require("../router");
-const { verifyPassword, signToken, isValidPin } = require("../utils/crypto");
+const { verifyPassword, hashPassword, signToken, isValidPin } = require("../utils/crypto");
 const { requireAuth, requireAdmin } = require("../middleware/auth");
 
+function normalizeEmail(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
 function register(router) {
+  // הרשמה עצמית - פתוחה לכולם, אבל מצליחה רק אם מנהל כבר אישר את המייל מראש (ר' /api/invites).
+  // "כל אחד יכול להירשם, אבל אם לא הכנסתי את המייל כמנהל הם לא יכולים" - משוב המשתמש.
+  router.post("/api/register", async (ctx) => {
+    const { email, fullName, username, pin, phone } = ctx.body;
+    if (!email || !fullName || !username || !pin) return json(ctx.res, 400, { error: "חסרים שדות חובה" });
+    if (!isValidPin(pin)) return json(ctx.res, 400, { error: "הקוד חייב להיות בדיוק 4 ספרות" });
+
+    const normalizedEmail = normalizeEmail(email);
+    const invite = db.prepare("SELECT * FROM signup_invites WHERE email = ? AND used_at IS NULL").get(normalizedEmail);
+    if (!invite) {
+      return json(ctx.res, 403, { error: "המייל הזה עדיין לא אושר ע\"י מנהל. בקשו מהמנהל להוסיף אתכם לרשימת המורשים." });
+    }
+
+    let userId;
+    try {
+      const info = db.prepare(
+        "INSERT INTO users (full_name, username, password_hash, role, phone, email) VALUES (?, ?, ?, ?, ?, ?)"
+      ).run(fullName.trim(), username.trim(), hashPassword(String(pin)), invite.role, phone || null, normalizedEmail);
+      userId = Number(info.lastInsertRowid);
+    } catch (e) {
+      if (/UNIQUE/.test(e.message)) return json(ctx.res, 409, { error: "שם המשתמש כבר תפוס" });
+      throw e;
+    }
+    db.prepare("UPDATE signup_invites SET used_at = datetime('now'), used_by_user_id = ? WHERE id = ?").run(userId, invite.id);
+
+    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
+    const token = signToken({ userId: user.id, username: user.username, role: user.role, fullName: user.full_name });
+    return json(ctx.res, 201, {
+      token,
+      user: { id: user.id, fullName: user.full_name, username: user.username, role: user.role },
+    });
+  });
+
+  // ניהול רשימת המיילים המורשים להרשמה עצמית (מנהלים בלבד).
+  router.get("/api/invites", requireAdmin(async (ctx) => {
+    const rows = db.prepare(
+      `SELECT si.*, u.full_name AS used_by_name FROM signup_invites si
+       LEFT JOIN users u ON u.id = si.used_by_user_id ORDER BY si.created_at DESC`
+    ).all();
+    return json(ctx.res, 200, { invites: rows });
+  }));
+
+  router.post("/api/invites", requireAdmin(async (ctx) => {
+    const { email, role } = ctx.body;
+    if (!email || !["admin", "worker"].includes(role)) return json(ctx.res, 400, { error: "חסר מייל, או role לא תקין" });
+    try {
+      const info = db.prepare(
+        "INSERT INTO signup_invites (email, role, created_by) VALUES (?, ?, ?)"
+      ).run(normalizeEmail(email), role, ctx.user.userId);
+      return json(ctx.res, 201, { id: Number(info.lastInsertRowid) });
+    } catch (e) {
+      if (/UNIQUE/.test(e.message)) return json(ctx.res, 409, { error: "המייל הזה כבר ברשימה" });
+      throw e;
+    }
+  }));
+
+  router.delete("/api/invites/:id", requireAdmin(async (ctx) => {
+    db.prepare("DELETE FROM signup_invites WHERE id = ? AND used_at IS NULL").run(ctx.params.id);
+    return json(ctx.res, 200, { ok: true });
+  }));
+
   router.post("/api/login", async (ctx) => {
     const { username, pin } = ctx.body;
     if (!username || !pin) return json(ctx.res, 400, { error: "יש להזין שם משתמש וקוד" });

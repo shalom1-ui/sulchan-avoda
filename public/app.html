@@ -62,12 +62,15 @@
 <div id="loginScreen">
   <div id="loginBox" class="card">
     <div style="font-weight:800;font-size:20px;margin-bottom:4px;">שולחן עבודה</div>
-    <div class="muted" style="margin-bottom:18px;">כניסה למערכת ניהול</div>
-    <div class="row" style="flex-direction:column;align-items:stretch;gap:12px;">
-      <input id="loginUsername" placeholder="שם משתמש" autocomplete="username">
-      <input id="loginPin" placeholder="קוד (4 ספרות)" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password">
-      <button id="loginBtn" onclick="doLogin()">כניסה</button>
-      <div id="loginStatus" class="status-line"></div>
+    <div class="muted" style="margin-bottom:18px;" id="loginSubtitle">כניסה למערכת ניהול</div>
+    <div id="loginFormArea">
+      <div class="row" style="flex-direction:column;align-items:stretch;gap:12px;">
+        <input id="loginUsername" placeholder="שם משתמש" autocomplete="username">
+        <input id="loginPin" placeholder="קוד (4 ספרות)" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password">
+        <button id="loginBtn" onclick="doLogin()">כניסה</button>
+        <div id="loginStatus" class="status-line"></div>
+        <button class="secondary" onclick="showRegisterForm()">אין לי חשבון - הרשמה</button>
+      </div>
     </div>
   </div>
 </div>
@@ -122,6 +125,50 @@ function logout() {
   TOKEN = ""; localStorage.removeItem("sulchan_token"); ME = null;
   document.getElementById("appShell").style.display = "none";
   document.getElementById("loginScreen").style.display = "flex";
+}
+
+// ---------- הרשמה עצמית (עובד רק אם מנהל כבר אישר את המייל מראש, ר' src/routes/auth.js) ----------
+function showRegisterForm() {
+  document.getElementById("loginSubtitle").textContent = "הרשמה - רק עם מייל שאושר מראש ע\"י מנהל";
+  document.getElementById("loginFormArea").innerHTML = `
+    <div class="row" style="flex-direction:column;align-items:stretch;gap:12px;">
+      <input id="regEmail" placeholder="מייל (חייב להיות מאושר מראש)" type="email">
+      <input id="regFullName" placeholder="שם מלא">
+      <input id="regUsername" placeholder="שם משתמש">
+      <input id="regPin" placeholder="קוד חדש (4 ספרות)" type="password" inputmode="numeric" maxlength="4">
+      <input id="regPhone" placeholder="טלפון (רשות)">
+      <button onclick="doRegister()">הרשמה</button>
+      <div id="registerStatus" class="status-line"></div>
+      <button class="secondary" onclick="showLoginForm()">יש לי כבר חשבון - כניסה</button>
+    </div>`;
+}
+function showLoginForm() {
+  document.getElementById("loginSubtitle").textContent = "כניסה למערכת ניהול";
+  document.getElementById("loginFormArea").innerHTML = `
+    <div class="row" style="flex-direction:column;align-items:stretch;gap:12px;">
+      <input id="loginUsername" placeholder="שם משתמש" autocomplete="username">
+      <input id="loginPin" placeholder="קוד (4 ספרות)" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password">
+      <button id="loginBtn" onclick="doLogin()">כניסה</button>
+      <div id="loginStatus" class="status-line"></div>
+      <button class="secondary" onclick="showRegisterForm()">אין לי חשבון - הרשמה</button>
+    </div>`;
+}
+async function doRegister() {
+  const email = document.getElementById("regEmail").value.trim();
+  const fullName = document.getElementById("regFullName").value.trim();
+  const username = document.getElementById("regUsername").value.trim();
+  const pin = document.getElementById("regPin").value.trim();
+  const phone = document.getElementById("regPhone").value.trim();
+  const statusEl = document.getElementById("registerStatus");
+  if (!email || !fullName || !username || !pin) { statusEl.textContent = "נא למלא את כל שדות החובה"; statusEl.className = "status-line err"; return; }
+  try {
+    const data = await api("/api/register", { method: "POST", body: { email, fullName, username, pin, phone } });
+    TOKEN = data.token;
+    localStorage.setItem("sulchan_token", TOKEN);
+    await boot();
+  } catch (e) {
+    statusEl.textContent = e.message; statusEl.className = "status-line err";
+  }
 }
 
 async function boot() {
@@ -408,10 +455,26 @@ async function deleteReport(id) {
 // ---------- משתמשים (מנהל) ----------
 async function renderUsers() {
   const main = document.getElementById("mainArea");
-  const data = await api("/api/users");
+  const [data, invitesData] = await Promise.all([api("/api/users"), api("/api/invites")]);
+  const pendingInvites = invitesData.invites.filter(i => !i.used_at);
+  const usedInvites = invitesData.invites.filter(i => i.used_at);
   main.innerHTML = `
     <div class="card">
-      <div style="font-weight:700;margin-bottom:10px;">הוספת משתמש</div>
+      <div style="font-weight:700;margin-bottom:10px;">הרשמה עצמית - מיילים מאושרים</div>
+      <div class="muted" style="margin-bottom:10px;">מי שיירשם בעצמו בעמוד הכניסה ("הרשמה") יצליח רק אם המייל שלו כאן.</div>
+      <div class="row" style="margin-bottom:10px;">
+        <input id="inviteEmail" placeholder="מייל" type="email" style="flex:1;">
+        <select id="inviteRole" style="width:120px;"><option value="worker">עובד</option><option value="admin">מנהל</option></select>
+        <button onclick="addInvite()">הוספה</button>
+      </div>
+      <div id="inviteStatus" class="status-line"></div>
+      ${pendingInvites.length ? `<table><thead><tr><th>מייל</th><th>תפקיד</th><th></th></tr></thead>
+      <tbody>${pendingInvites.map(i => `<tr><td>${esc(i.email)}</td><td>${i.role === "admin" ? "מנהל" : "עובד"}</td>
+        <td><button class="danger" onclick="deleteInvite(${i.id})">ביטול</button></td></tr>`).join("")}</tbody></table>` : "<div class='muted'>אין מיילים ממתינים כרגע</div>"}
+      ${usedInvites.length ? `<div class="muted" style="margin-top:10px;">כבר נרשמו: ${usedInvites.map(i => esc(i.email) + " (" + esc(i.used_by_name || "") + ")").join(", ")}</div>` : ""}
+    </div>
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:10px;">הוספת משתמש (ישירות, ע"י מנהל)</div>
       <div class="row" style="margin-bottom:8px;">
         <input id="uFullName" placeholder="שם מלא" style="flex:1;">
         <input id="uUsername" placeholder="שם משתמש" style="flex:1;">
@@ -433,6 +496,21 @@ async function renderUsers() {
       <td>${u.role === "worker" ? `<button class="secondary" onclick="openWorkerBranches(${u.id}, '${esc(u.full_name).replace(/'/g,"\\'")}')">שיוך סניפים</button>` : "-"}</td>
       <td><button class="danger" onclick="deleteUser(${u.id}, '${esc(u.full_name).replace(/'/g,"\\'")}')">מחיקה</button></td>
     </tr>`).join("")}</tbody></table></div>`;
+}
+async function addInvite() {
+  const email = document.getElementById("inviteEmail").value.trim();
+  const role = document.getElementById("inviteRole").value;
+  const statusEl = document.getElementById("inviteStatus");
+  if (!email) { statusEl.textContent = "נא להזין מייל"; statusEl.className = "status-line err"; return; }
+  try {
+    await api("/api/invites", { method: "POST", body: { email, role } });
+    statusEl.textContent = "נוסף בהצלחה"; statusEl.className = "status-line ok";
+    renderUsers();
+  } catch (e) { statusEl.textContent = e.message; statusEl.className = "status-line err"; }
+}
+async function deleteInvite(id) {
+  await api("/api/invites/" + id, { method: "DELETE" });
+  renderUsers();
 }
 async function editUserName(id, currentName) {
   const newName = prompt("שם מלא חדש:", currentName);

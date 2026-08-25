@@ -62,6 +62,18 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
+  -- הזמנות הרשמה: מנהל מוסיף מייל מראש (עם תפקיד), ורק אז מי שמגיע עם המייל הזה יכול להירשם בעצמו
+  -- (ר' POST /api/register) - "כל אחד יכול להירשם, אבל רק אם המייל שלו כבר אושר ע"י מנהל".
+  CREATE TABLE IF NOT EXISTS signup_invites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT UNIQUE NOT NULL,
+    role TEXT NOT NULL,                 -- 'admin' | 'worker' - התפקיד שהחשבון יקבל בהרשמה
+    used_at TEXT,
+    used_by_user_id INTEGER REFERENCES users(id),
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
   -- הוראות שנשלחות לעובד ספציפי לגבי סניף ספציפי - דרך מייל + שלוחה בטלפון.
   CREATE TABLE IF NOT EXISTS instructions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

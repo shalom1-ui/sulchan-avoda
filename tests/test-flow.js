@@ -72,6 +72,31 @@ async function main() {
   const usersAfterRename = await call("/api/users", { token: adminToken });
   ok(usersAfterRename.data.users.find(u => u.id === workerId).full_name === "שלום כהן", "השם החדש נשמר ומוחזר נכון");
 
+  // --- הרשמה עצמית: נכשלת בלי הזמנה מראש, מצליחה אחרי שהמנהל מוסיף את המייל ---
+  const registerBlocked = await call("/api/register", { method: "POST", body: {
+    email: "new-worker@example.com", fullName: "עובד חדש", username: "newworker", pin: "1111",
+  }});
+  ok(registerBlocked.status === 403, "הרשמה עצמית נכשלת ללא הזמנה מאושרת מראש");
+
+  const workerCannotInvite = await call("/api/invites", { method: "POST", token: workerToken, body: { email: "new-worker@example.com", role: "worker" } });
+  ok(workerCannotInvite.status === 403, "עובד לא יכול להוסיף הזמנות הרשמה");
+
+  const invite = await call("/api/invites", { method: "POST", token: adminToken, body: { email: "New-Worker@Example.com", role: "worker" } });
+  ok(invite.status === 201, "מנהל מאשר מייל להרשמה עצמית");
+
+  const registerAllowed = await call("/api/register", { method: "POST", body: {
+    email: "new-worker@example.com", fullName: "עובד חדש", username: "newworker", pin: "1111",
+  }});
+  ok(registerAllowed.status === 201 && registerAllowed.data.token && registerAllowed.data.user.role === "worker", "הרשמה עצמית מצליחה אחרי אישור, ומקבלת role נכון מההזמנה (גם שהאימייל נכתב באותיות גדולות)");
+
+  const registerAgainFails = await call("/api/register", { method: "POST", body: {
+    email: "new-worker@example.com", fullName: "עובד חדש שוב", username: "newworker2", pin: "2222",
+  }});
+  ok(registerAgainFails.status === 403, "אותה הזמנה לא ניתנת לשימוש פעמיים");
+
+  const invitesList = await call("/api/invites", { token: adminToken });
+  ok(invitesList.status === 200 && invitesList.data.invites.find(i => i.email === "new-worker@example.com").used_by_name === "עובד חדש", "רשימת ההזמנות מראה מי נרשם עם כל הזמנה");
+
   const instr = await call("/api/instructions", { method: "POST", token: adminToken, body: {
     branchId, workerUserId: workerId, text: "לנקות את עמדות המחשב",
   }});
