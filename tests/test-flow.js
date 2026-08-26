@@ -221,6 +221,10 @@ async function main() {
   const allBen = await call("/api/beneficiaries", { token: adminToken });
   ok(allBen.status === 200 && allBen.data.beneficiaries.length === 2 && allBen.data.beneficiaries.every(b => b.branch_name), "רשימת מוטבים שטוחה (כל הסניפים) מחזירה גם שם סניף");
 
+  // הסניף הראשון כבר מגיע עם עמדות/טאבלטים מזריעת נתונים ראשונית (ר' src/db.js) - הבדיקות סופרות
+  // יחסית לבייסליין ולא במספר מוחלט, כדי לא להישבר כשמוסיפים עוד סניפים לזריעה בעתיד.
+  const stationsBaseline = await call(`/api/branches/${branchId}/stations`, { token: adminToken });
+  const stationBaseCount = stationsBaseline.data.stations.length;
   const station1 = await call(`/api/branches/${branchId}/stations`, { method: "POST", token: adminToken, body: { number: "1" } });
   ok(station1.status === 201, "עמדה נוספה לסניף בלי קבוצה/אגף");
   const station2 = await call(`/api/branches/${branchId}/stations`, { method: "POST", token: adminToken, body: { number: "2", groupLabel: "נשים" } });
@@ -228,7 +232,7 @@ async function main() {
   const noNumber = await call(`/api/branches/${branchId}/stations`, { method: "POST", token: adminToken, body: {} });
   ok(noNumber.status === 400, "עמדה בלי מספר נדחית");
   const stationsList = await call(`/api/branches/${branchId}/stations`, { token: workerToken });
-  ok(stationsList.status === 200 && stationsList.data.stations.length === 2 && stationsList.data.stations.some(s => s.group_label === "נשים"), "עובד יכול לראות את רשימת העמדות של הסניף");
+  ok(stationsList.status === 200 && stationsList.data.stations.length === stationBaseCount + 2 && stationsList.data.stations.some(s => s.id === station2.data.id && s.group_label === "נשים"), "עובד יכול לראות את רשימת העמדות של הסניף");
   const editStation = await call(`/api/stations/${station1.data.id}`, { method: "PUT", token: adminToken, body: { number: "1", groupLabel: "גברים" } });
   ok(editStation.status === 200, "עריכת עמדה (הוספת קבוצה/אגף) עובדת");
   const workerCannotAddStation = await call(`/api/branches/${branchId}/stations`, { method: "POST", token: workerToken, body: { number: "9" } });
@@ -236,7 +240,7 @@ async function main() {
   const deleteStation = await call(`/api/stations/${station2.data.id}`, { method: "DELETE", token: adminToken });
   ok(deleteStation.status === 200, "מחיקת עמדה (רכה) עובדת");
   const stationsAfterDelete = await call(`/api/branches/${branchId}/stations`, { token: adminToken });
-  ok(stationsAfterDelete.status === 200 && stationsAfterDelete.data.stations.length === 1, "עמדה שנמחקה לא מופיעה יותר ברשימה");
+  ok(stationsAfterDelete.status === 200 && stationsAfterDelete.data.stations.length === stationBaseCount + 1, "עמדה שנמחקה לא מופיעה יותר ברשימה");
 
   const phrase1 = await call("/api/instruction-phrases", { method: "POST", token: adminToken, body: { text: "לתקן מקלדת" } });
   ok(phrase1.status === 201, "ביטוי חדש נוסף למילון");
@@ -246,6 +250,25 @@ async function main() {
   ok(phrasesList.status === 200 && phrasesList.data.phrases.length === 1, "רשימת המילון מכילה ביטוי אחד בלבד אחרי הכפילות");
   const deletePhrase = await call(`/api/instruction-phrases/${phrase1.data.id}`, { method: "DELETE", token: adminToken });
   ok(deletePhrase.status === 200, "מחיקת ביטוי מהמילון עובדת");
+
+  const tabletsBaseline = await call("/api/tablets", { token: adminToken });
+  const tabletBaseCount = tabletsBaseline.data.tablets.length;
+  const tabletWithBranch = await call("/api/tablets", { method: "POST", token: adminToken, body: { label: "טאבלט בדיקה", branchId } });
+  ok(tabletWithBranch.status === 201, "טאבלט נוסף עם שיוך לסניף");
+  const tabletNoBranch = await call("/api/tablets", { method: "POST", token: adminToken, body: { label: "טאבלט בלי סניף" } });
+  ok(tabletNoBranch.status === 201, "טאבלט נוסף בלי שיוך לסניף (branchId ריק מותר)");
+  const noLabel = await call("/api/tablets", { method: "POST", token: adminToken, body: {} });
+  ok(noLabel.status === 400, "טאבלט בלי תווית נדחה");
+  const tabletsList = await call("/api/tablets", { token: adminToken });
+  ok(tabletsList.status === 200 && tabletsList.data.tablets.length === tabletBaseCount + 2 && tabletsList.data.tablets.some(t => t.id === tabletNoBranch.data.id && t.branch_name === null), "רשימת הטאבלטים מחזירה גם את הטאבלט בלי סניף");
+  const editTablet = await call(`/api/tablets/${tabletNoBranch.data.id}`, { method: "PUT", token: adminToken, body: { label: "טאבלט בדיקה 2", branchId } });
+  ok(editTablet.status === 200, "עריכת טאבלט (הוספת שיוך לסניף) עובדת");
+  const workerCannotAddTablet = await call("/api/tablets", { method: "POST", token: workerToken, body: { label: "לא אמור לעבוד" } });
+  ok(workerCannotAddTablet.status === 403, "עובד לא יכול להוסיף טאבלט (מוגבל למנהלים)");
+  const deleteTablet = await call(`/api/tablets/${tabletWithBranch.data.id}`, { method: "DELETE", token: adminToken });
+  ok(deleteTablet.status === 200, "מחיקת טאבלט (רכה) עובדת");
+  const tabletsAfterDelete = await call("/api/tablets", { token: adminToken });
+  ok(tabletsAfterDelete.status === 200 && tabletsAfterDelete.data.tablets.length === tabletBaseCount + 1, "טאבלט שנמחק לא מופיע יותר ברשימה");
 
   const tx = await call("/api/transactions", { method: "POST", token: adminToken, body: { type: "income", amount: 1000, category: "תשלום סניף" } });
   ok(tx.status === 201, "תנועת הכנסה נוספה");

@@ -102,6 +102,7 @@ require("./routes/branches").register(router);
 require("./routes/beneficiaries").register(router);
 require("./routes/stations").register(router);
 require("./routes/phrases").register(router);
+require("./routes/tablets").register(router);
 require("./routes/instructions").register(router);
 require("./routes/reports").register(router);
 require("./routes/chat").register(router);

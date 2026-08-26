@@ -262,7 +262,7 @@ async function boot() {
 
 function buildNav() {
   const tabs = ME.role === "admin"
-    ? [["dashboard","לוח בקרה"],["branches","סניפים"],["beneficiariesAll","מוטבים"],["instructions","הוראות"],["reports","דיווחים"],["chat","צ'אט"],["users","משתמשים"],["finance","כספים"],["minutesConverter","ממיר דקות"]]
+    ? [["dashboard","לוח בקרה"],["branches","סניפים"],["beneficiariesAll","מוטבים"],["tablets","טאבלטים"],["instructions","הוראות"],["reports","דיווחים"],["chat","צ'אט"],["users","משתמשים"],["finance","כספים"],["minutesConverter","ממיר דקות"]]
     : [["myInstructions","ההוראות שלי"],["myReport","דיווח"],["chat","צ'אט"]];
   const nav = document.getElementById("navBar");
   nav.innerHTML = "";
@@ -286,7 +286,7 @@ function showTab(key) {
     dashboard: renderDashboard, branches: renderBranches, instructions: renderInstructions,
     reports: renderReports, chat: renderChatThreads, users: renderUsers, finance: renderFinance,
     myInstructions: renderMyInstructions, myReport: renderMyReport, minutesConverter: renderMinutesConverter,
-    beneficiariesAll: renderBeneficiariesAll,
+    beneficiariesAll: renderBeneficiariesAll, tablets: renderTablets,
   };
   (renderers[key] || (() => {}))();
 }
@@ -498,6 +498,58 @@ async function renderBeneficiariesAll() {
       || "<tr><td colspan='5' class='muted'>אין עדיין הוצאות קבועות</td></tr>"}
     </tbody></table>
   </div>`;
+}
+
+// ---------- טאבלטים (מנהל) ----------
+async function renderTablets() {
+  const main = document.getElementById("mainArea");
+  const data = await api("/api/tablets");
+  main.innerHTML = `
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:10px;">הוספת טאבלט</div>
+      <div class="row">
+        <select id="newTabletBranch" style="flex:1;">
+          <option value="">ללא סניף מסוים</option>
+          ${BRANCHES.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join("")}
+        </select>
+        <input id="newTabletLabel" placeholder="תווית (למשל 'טאבלט רב זירא')" style="flex:2;">
+        <button onclick="addTablet()">הוספה</button>
+      </div>
+      <div id="tabletStatus" class="status-line"></div>
+    </div>
+    <div class="card"><table><thead><tr><th>סניף</th><th>תווית</th><th></th><th></th></tr></thead>
+    <tbody>${data.tablets.map(t => `<tr>
+      <td>${t.branch_name ? esc(t.branch_name) : "<span class='muted'>ללא סניף</span>"}</td>
+      <td>${esc(t.label)}</td>
+      <td><button class="secondary" onclick="editTablet(${t.id}, '${safeStr(t.label)}', ${t.branch_id || "null"})">עריכה</button></td>
+      <td><button class="danger" onclick="deleteTablet(${t.id})">מחיקה</button></td>
+    </tr>`).join("") || "<tr><td colspan='4' class='muted'>אין טאבלטים עדיין</td></tr>"}
+    </tbody></table></div>`;
+}
+async function addTablet() {
+  const branchId = document.getElementById("newTabletBranch").value;
+  const label = document.getElementById("newTabletLabel").value.trim();
+  const statusEl = document.getElementById("tabletStatus");
+  if (!label) { statusEl.textContent = "נא להזין תווית"; statusEl.className = "status-line err"; return; }
+  try {
+    await api("/api/tablets", { method: "POST", body: { label, branchId: branchId ? Number(branchId) : null } });
+    renderTablets();
+  } catch (e) { statusEl.textContent = e.message; statusEl.className = "status-line err"; }
+}
+async function editTablet(id, currentLabel, currentBranchId) {
+  const newLabel = prompt("תווית:", currentLabel);
+  if (newLabel === null) return;
+  if (!newLabel.trim()) { alert("התווית לא יכולה להיות ריקה"); return; }
+  const branchOptions = BRANCHES.map(b => `${b.id}: ${b.name}`).join("\n");
+  const branchIdStr = prompt(`מזהה סניף (השאירו ריק = ללא סניף):\n${branchOptions}`, currentBranchId || "");
+  if (branchIdStr === null) return;
+  await api(`/api/tablets/${id}`, { method: "PUT", body: { label: newLabel.trim(), branchId: branchIdStr.trim() ? Number(branchIdStr.trim()) : null } });
+  renderTablets();
+}
+async function deleteTablet(id) {
+  if (!confirm("למחוק את הטאבלט?")) return;
+  await api("/api/tablets/" + id, { method: "DELETE" });
+  renderTablets();
 }
 
 // ---------- הוראות (מנהל) ----------

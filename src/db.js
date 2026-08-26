@@ -183,6 +183,16 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
+  -- טאבלטים - ציוד נפרד מעמדות המחשב (בד"כ טאבלט אחד לסניף, לפעמים ייעודי כמו "הפקדת צ'קים").
+  -- branch_id יכול להיות NULL אם לא ברור לאיזה סניף בדיוק שייך הטאבלט (ר' משוב המשתמש).
+  CREATE TABLE IF NOT EXISTS tablets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    branch_id INTEGER REFERENCES branches(id),
+    label TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
   -- התראות למנהלים (פעמון/באדג' באתר) - נוצרת אוטומטית על כל דיווח חדש.
   CREATE TABLE IF NOT EXISTS notifications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -242,6 +252,10 @@ if (branchCount === 0) {
   for (const [name, address] of seedBranches) insertBranch.run(name, address);
 }
 
+// שינוי שם: הסניף שהיה רשום כ"קניון לב הרמה" נקרא בפועל "מגן הרמה" במערכת החיצונית (אישור
+// המשתמש) - מחליפים בשם פעם אחת, בטוח להרצה חוזרת (לא עושה כלום אם השם כבר שונה).
+db.exec(`UPDATE branches SET name = REPLACE(name, 'לב הרמה', 'מגן הרמה') WHERE name LIKE '%לב הרמה%'`);
+
 // תיקון: עמדות "תלמוד בבלי" שנזרעו בגרסה קודמת עם group_label ריק - עכשיו שיש נתון מלא יותר,
 // מסתבר שהיה להן שם קבוצה ("גברים תלמוד בבלי") שפשוט לא הגיע בהדבקה הראשונה. UPDATE בטוח להרצה חוזרת.
 db.exec(`
@@ -251,8 +265,6 @@ db.exec(`
 
 // זריעת עמדות ראשוניות מהנתונים שהמשתמש העתיק והדביק בשיחה (צילומי מסך של מערכת חיצונית) - כדי
 // שלא יצטרך להקליד אותן ידנית. לכל סניף: רק אם עדיין אין לו אף עמדה (לא לשכפל/לדרוס עריכה ידנית).
-// **חלקי בכוונה** - כמה סניפים בצילומי המסך לא זוהו בוודאות (למשל "מגן הרמה" ושני "נהרדעא" שונים)
-// ולא נכללו כאן - ר' השיחה עם המשתמש לבירור לפני שמוסיפים אותם.
 const stationSeedData = {
   "רמה ג' 2 - אלישע הנביא": [
     { group: "גברים אלישע", numbers: ["2", "3", "4", "5", "7", "8"] },
@@ -290,6 +302,26 @@ const stationSeedData = {
     { group: "גברים ד3 האמוראים", numbers: ["1", "2", "3", "4", "5"] },
     { group: "נשים ד3 האמוראים", numbers: ["1", "2", "3", "4", "זוגות 1", "זוגות 2"] },
   ],
+  // בהתקנה קיימת (פרודקשן) הסניף הזה כבר הוזרע בגרסה קודמת - ה-UPDATE למעלה מתקן את group_label
+  // שם. הערך כאן משמש רק בהתקנה חדשה-לגמרי (dev מקומי טרי וכו') שעדיין אין לה אף עמדה בכלל.
+  "רמה ד' 3 - תלמוד בבלי": [
+    { group: "גברים תלמוד בבלי", numbers: ["1", "2", "3", "4", "5", "6", "עמדה 7"] },
+    { group: "נשים תלמוד בבלי", numbers: ["1", "2", "3", "4", "5", "6"] },
+  ],
+  // "מגן הרמה" - אושר ע"י המשתמש שזה השם החדש של "קניון לב הרמה" (ר' שינוי השם למעלה).
+  "קניון מגן הרמה (ליד רב-קו)": [
+    { group: "גברים מגן הרמה", numbers: ["2", "3", "3", "4", "5", "6", "7", "עמדה 8 גברים", "עמדה גברים 9"] },
+    { group: "נשים מגן הרמה", numbers: ["1", "2", "3", "4", "5", "6", "7"] },
+  ],
+  // "קאשווי" אושר ע"י המשתמש כשייך לנהרדעא 6; "נהרדעא ד3" (בלי תיוג נוסף) משויך ל-28 מהשארה.
+  "רמה ד' 3 - נהרדעא 6": [
+    { group: "נהרדעא -קאשווי גברים", numbers: ["1", "2", "3", "4", "5", "6", "7"] },
+    { group: "נהרדעא -קאשווי נשים", numbers: ["1", "2", "3", "4", "5"] },
+  ],
+  "רמה ד' 3 - נהרדעא 28": [
+    { group: "נהרדעא ד3 גברים", numbers: ["1", "2", "3", "4", "5", "6"] },
+    { group: "נהרדעא ד3 נשים", numbers: ["1", "2", "זוגות 3"] },
+  ],
 };
 for (const [branchName, groups] of Object.entries(stationSeedData)) {
   const branch = db.prepare("SELECT id FROM branches WHERE name = ?").get(branchName);
@@ -299,6 +331,32 @@ for (const [branchName, groups] of Object.entries(stationSeedData)) {
   const insertStation = db.prepare("INSERT INTO stations (branch_id, number, group_label) VALUES (?, ?, ?)");
   for (const g of groups) {
     for (const n of g.numbers) insertStation.run(branch.id, n, g.group);
+  }
+}
+
+// זריעת טאבלטים ראשוניים מהנתונים שהמשתמש שלח (אישר "תעשה לי משהו חדש, זה בסדר") - רק אם עדיין
+// אין אף טאבלט בטבלה (לא לשכפל אם כבר הוזנו/נערכו ידנית). branchName=null = לא היה ברור מהצילום
+// לאיזה סניף בדיוק שייך (למשל "טאבלט נהרדעא" הכללי, בלי לציין 6 או 28).
+const tabletCount = db.prepare("SELECT COUNT(*) AS c FROM tablets").get().c;
+if (tabletCount === 0) {
+  const tabletSeedData = [
+    ["רמה ד' 3 - תלמוד בבלי", "הפקדת צ'קים תלמוד בבלי"],
+    ["רמה ד' 3 - האמוראים", "טאבלט 6 ד3 שדרת האמוראים"],
+    ["רמה ג' 2 - אלישע הנביא", "טאבלט אלישע"],
+    ["קניון מגן הרמה (ליד רב-קו)", "טאבלט לב הרמה"],
+    ["רמה ד' 1 - מר עוקבא", "טאבלט מר עוקבא"],
+    ["רמה ד' 3 - נהרדעא 6", "טאבלט קאשוי"],
+    ["רמה ד' 1 - רב זירא", "טאבלט רב זירא"],
+    ["רמה ד' 4 - חלקיה בר\"ט", "טאבלט חלקיה"],
+    ["רמה ד' 1 - רב חנן", "טאבלט רב חנן"],
+    ["רמה ב'", "טאבלט ריבל 5"],
+    ["רמה ג' 2 - מרים הנביאה", "טאבלט- מרים הנביאה"],
+    [null, "טאבלט נהרדעא"], // לא ברור אם 6 או 28 - השאר בלי סניף עד לבירור
+  ];
+  const insertTablet = db.prepare("INSERT INTO tablets (branch_id, label) VALUES (?, ?)");
+  for (const [branchName, label] of tabletSeedData) {
+    const branchId = branchName ? (db.prepare("SELECT id FROM branches WHERE name = ?").get(branchName) || {}).id : null;
+    insertTablet.run(branchId || null, label);
   }
 }
 
