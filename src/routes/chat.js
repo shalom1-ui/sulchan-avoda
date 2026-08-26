@@ -130,6 +130,19 @@ function register(router) {
     return json(ctx.res, 201, { created: createdCount, emailsSent });
   }));
 
+  // סימון שרשור כ"ממתין לטיפול המשך" - מחזיר את ההודעה האחרונה מהעובד למצב לא-נקרא (read_at=NULL),
+  // כדי שהתג האדום יופיע שוב ברשימת השרשורים, גם אחרי שהמנהל כבר פתח וקרא את השרשור (ר' משוב
+  // המשתמש: "אפשרות להשאיר במצב ממתין לטיפול המשך כאילו לא נקרא"). לא מוחק כלום, רק "מבטל קריאה".
+  router.put("/api/chat/:branchId/:workerId/mark-pending", requireAdmin(async (ctx) => {
+    const lastFromWorker = db.prepare(
+      `SELECT id FROM chat_messages WHERE branch_id = ? AND worker_user_id = ? AND sender_user_id = ?
+       ORDER BY created_at DESC LIMIT 1`
+    ).get(ctx.params.branchId, ctx.params.workerId, ctx.params.workerId);
+    if (!lastFromWorker) return json(ctx.res, 404, { error: "אין הודעה מהעובד בשרשור הזה לסמן כממתינה" });
+    db.prepare("UPDATE chat_messages SET read_at = NULL WHERE id = ?").run(lastFromWorker.id);
+    return json(ctx.res, 200, { ok: true });
+  }));
+
   // מחיקת הודעת צ'אט - מנהל יכול למחוק כל הודעה בשרשור; עובד יכול למחוק רק הודעה ששלח בעצמו.
   router.delete("/api/chat/message/:id", requireAuth(async (ctx) => {
     const msg = db.prepare("SELECT * FROM chat_messages WHERE id = ?").get(ctx.params.id);

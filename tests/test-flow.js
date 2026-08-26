@@ -156,6 +156,20 @@ async function main() {
   // 2 הודעות: ההוראה שנוצרה אוטומטית כהודעת צ'אט (ר' routes/instructions.js) + ההודעה שהעובד כתב עכשיו
   ok(chatRead.status === 200 && chatRead.data.messages.length === 2 && chatRead.data.messages.some(m => m.text.includes("📋 הוראה")), "מנהל רואה גם את ההוראה וגם את הודעת הצ'אט של העובד");
 
+  // --- "סמן כממתין לטיפול" - מחזיר שרשור שכבר נקרא למצב לא-נקרא, בלי למחוק כלום ---
+  const threadsBeforePending = await call("/api/chat/threads", { token: adminToken });
+  const threadBefore = threadsBeforePending.data.threads.find(t => t.branch_id === branchId && t.worker_user_id === workerId);
+  ok(threadBefore && threadBefore.unread_count === 0, "אחרי שהמנהל פתח וקרא את השרשור, אין הודעות לא-נקראות");
+  const markPending = await call(`/api/chat/${branchId}/${workerId}/mark-pending`, { method: "PUT", token: adminToken });
+  ok(markPending.status === 200, "מנהל מסמן שרשור כממתין לטיפול המשך");
+  const threadsAfterPending = await call("/api/chat/threads", { token: adminToken });
+  const threadAfter = threadsAfterPending.data.threads.find(t => t.branch_id === branchId && t.worker_user_id === workerId);
+  ok(threadAfter && threadAfter.unread_count === 1, "אחרי הסימון, השרשור שוב מופיע כלא-נקרא ברשימת השרשורים");
+  const msgsStillThere = await call(`/api/chat/${branchId}/${workerId}`, { token: adminToken });
+  ok(msgsStillThere.status === 200 && msgsStillThere.data.messages.length === 2, "סימון כממתין לא מוחק אף הודעה");
+  const workerCannotMarkPending = await call(`/api/chat/${branchId}/${workerId}/mark-pending`, { method: "PUT", token: workerToken });
+  ok(workerCannotMarkPending.status === 403, "עובד לא יכול לסמן שרשור כממתין לטיפול (מוגבל למנהלים)");
+
   // --- מנהל שולח הודעת צ'אט לעובד (כיוון הפוך) - נשלח מייל לעובד (MOCK), לא אמור לזרוק שגיאה ---
   const adminChat = await call(`/api/chat/${branchId}/${workerId}`, { method: "POST", token: adminToken, body: { text: "תודה על העבודה!" } });
   ok(adminChat.status === 201, "מנהל שולח הודעת צ'אט לעובד (עם שליחת מייל ברקע)");
@@ -206,6 +220,32 @@ async function main() {
 
   const allBen = await call("/api/beneficiaries", { token: adminToken });
   ok(allBen.status === 200 && allBen.data.beneficiaries.length === 2 && allBen.data.beneficiaries.every(b => b.branch_name), "רשימת מוטבים שטוחה (כל הסניפים) מחזירה גם שם סניף");
+
+  const station1 = await call(`/api/branches/${branchId}/stations`, { method: "POST", token: adminToken, body: { number: "1" } });
+  ok(station1.status === 201, "עמדה נוספה לסניף בלי קבוצה/אגף");
+  const station2 = await call(`/api/branches/${branchId}/stations`, { method: "POST", token: adminToken, body: { number: "2", groupLabel: "נשים" } });
+  ok(station2.status === 201, "עמדה נוספה עם קבוצה/אגף");
+  const noNumber = await call(`/api/branches/${branchId}/stations`, { method: "POST", token: adminToken, body: {} });
+  ok(noNumber.status === 400, "עמדה בלי מספר נדחית");
+  const stationsList = await call(`/api/branches/${branchId}/stations`, { token: workerToken });
+  ok(stationsList.status === 200 && stationsList.data.stations.length === 2 && stationsList.data.stations.some(s => s.group_label === "נשים"), "עובד יכול לראות את רשימת העמדות של הסניף");
+  const editStation = await call(`/api/stations/${station1.data.id}`, { method: "PUT", token: adminToken, body: { number: "1", groupLabel: "גברים" } });
+  ok(editStation.status === 200, "עריכת עמדה (הוספת קבוצה/אגף) עובדת");
+  const workerCannotAddStation = await call(`/api/branches/${branchId}/stations`, { method: "POST", token: workerToken, body: { number: "9" } });
+  ok(workerCannotAddStation.status === 403, "עובד לא יכול להוסיף עמדה (מוגבל למנהלים)");
+  const deleteStation = await call(`/api/stations/${station2.data.id}`, { method: "DELETE", token: adminToken });
+  ok(deleteStation.status === 200, "מחיקת עמדה (רכה) עובדת");
+  const stationsAfterDelete = await call(`/api/branches/${branchId}/stations`, { token: adminToken });
+  ok(stationsAfterDelete.status === 200 && stationsAfterDelete.data.stations.length === 1, "עמדה שנמחקה לא מופיעה יותר ברשימה");
+
+  const phrase1 = await call("/api/instruction-phrases", { method: "POST", token: adminToken, body: { text: "לתקן מקלדת" } });
+  ok(phrase1.status === 201, "ביטוי חדש נוסף למילון");
+  const phraseDup = await call("/api/instruction-phrases", { method: "POST", token: adminToken, body: { text: "לתקן מקלדת" } });
+  ok(phraseDup.status === 200 && phraseDup.data.alreadyExists, "הוספת ביטוי כפול לא יוצרת שורה נוספת, רק מחזירה את הקיים");
+  const phrasesList = await call("/api/instruction-phrases", { token: adminToken });
+  ok(phrasesList.status === 200 && phrasesList.data.phrases.length === 1, "רשימת המילון מכילה ביטוי אחד בלבד אחרי הכפילות");
+  const deletePhrase = await call(`/api/instruction-phrases/${phrase1.data.id}`, { method: "DELETE", token: adminToken });
+  ok(deletePhrase.status === 200, "מחיקת ביטוי מהמילון עובדת");
 
   const tx = await call("/api/transactions", { method: "POST", token: adminToken, body: { type: "income", amount: 1000, category: "תשלום סניף" } });
   ok(tx.status === 201, "תנועת הכנסה נוספה");

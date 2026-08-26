@@ -342,15 +342,64 @@ async function renderBranches() {
       </div>
       <div id="branchStatus" class="status-line"></div>
     </div>
-    <div class="card"><table><thead><tr><th>שם</th><th>כתובת</th><th>מוטבים</th><th></th><th></th></tr></thead>
+    <div class="card"><table><thead><tr><th>שם</th><th>כתובת</th><th>מוטבים</th><th>עמדות</th><th></th><th></th></tr></thead>
     <tbody id="branchesTableBody"></tbody></table></div>`;
   const tbody = document.getElementById("branchesTableBody");
   tbody.innerHTML = BRANCHES.map(b => `<tr>
     <td>${esc(b.name)}</td><td class="muted">${esc(b.address || "-")}</td>
     <td><button class="secondary" onclick="openBeneficiaries(${b.id}, '${esc(b.name).replace(/'/g,"\\'")}')">ניהול מוטבים</button></td>
+    <td><button class="secondary" onclick="openStations(${b.id}, '${esc(b.name).replace(/'/g,"\\'")}')">ניהול עמדות</button></td>
     <td><button class="secondary" onclick="editBranch(${b.id}, '${safeStr(b.name)}', '${safeStr(b.address || "")}')">עריכה</button></td>
     <td><button class="danger" onclick="deleteBranch(${b.id})">מחיקה</button></td>
   </tr>`).join("");
+}
+async function openStations(branchId, branchName) {
+  const data = await api(`/api/branches/${branchId}/stations`);
+  const main = document.getElementById("mainArea");
+  const bn = safeStr(branchName);
+  main.innerHTML = `
+    <button class="secondary" onclick="renderBranches()">→ חזרה לסניפים</button>
+    <div style="font-weight:800;font-size:17px;margin:14px 0 4px;">עמדות - ${esc(branchName)}</div>
+    <div class="muted" style="margin-bottom:10px;">רשימת עמדות המחשב בסניף הזה, כדי לאפשר לשלוח הוראת תחזוקה/ניקיון לעמדה ספציפית ולא רק לכל הסניף.</div>
+    <div class="card">
+      <div class="row">
+        <input id="newStationNumber" placeholder="מספר עמדה" style="flex:1;">
+        <input id="newStationGroup" placeholder="קבוצה/אגף (רשות, למשל 'נשים')" style="flex:2;">
+        <button onclick="addStation(${branchId}, '${bn}')">הוספה</button>
+      </div>
+      <div id="stationStatus" class="status-line"></div>
+      <table style="margin-top:14px;"><thead><tr><th>מספר עמדה</th><th>קבוצה/אגף</th><th></th><th></th></tr></thead>
+      <tbody>${data.stations.map(s => `<tr>
+        <td>${esc(s.number)}</td><td class="muted">${esc(s.group_label || "-")}</td>
+        <td><button class="secondary" onclick="editStation(${s.id}, ${branchId}, '${bn}', '${safeStr(s.number)}', '${safeStr(s.group_label || "")}')">עריכה</button></td>
+        <td><button class="danger" onclick="deleteStation(${s.id}, ${branchId}, '${bn}')">מחיקה</button></td>
+      </tr>`).join("") || `<tr><td colspan='4' class='muted'>אין עמדות עדיין</td></tr>`}
+      </tbody></table>
+    </div>`;
+}
+async function addStation(branchId, branchName) {
+  const number = document.getElementById("newStationNumber").value.trim();
+  const groupLabel = document.getElementById("newStationGroup").value.trim();
+  const statusEl = document.getElementById("stationStatus");
+  if (!number) { statusEl.textContent = "נא להזין מספר עמדה"; statusEl.className = "status-line err"; return; }
+  try {
+    await api(`/api/branches/${branchId}/stations`, { method: "POST", body: { number, groupLabel } });
+    openStations(branchId, branchName);
+  } catch (e) { statusEl.textContent = e.message; statusEl.className = "status-line err"; }
+}
+async function editStation(id, branchId, branchName, currentNumber, currentGroup) {
+  const newNumber = prompt("מספר עמדה:", currentNumber);
+  if (newNumber === null) return;
+  if (!newNumber.trim()) { alert("מספר עמדה לא יכול להיות ריק"); return; }
+  const newGroup = prompt("קבוצה/אגף (רשות):", currentGroup || "");
+  if (newGroup === null) return;
+  await api(`/api/stations/${id}`, { method: "PUT", body: { number: newNumber.trim(), groupLabel: newGroup.trim() || null } });
+  openStations(branchId, branchName);
+}
+async function deleteStation(id, branchId, branchName) {
+  if (!confirm("למחוק את העמדה?")) return;
+  await api(`/api/stations/${id}`, { method: "DELETE" });
+  openStations(branchId, branchName);
 }
 async function editBranch(id, currentName, currentAddress) {
   const newName = prompt("שם הסניף:", currentName);
@@ -466,7 +515,7 @@ async function renderInstructions() {
             <button class="secondary" style="padding:3px 10px;font-size:11.5px;" onclick="toggleAllCheckboxes('instrBranchList')">בחר הכל</button>
           </div>
           <div id="instrBranchList" style="max-height:180px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:8px;">
-            ${BRANCHES.map(b => `<label class="row" style="margin-bottom:4px;"><input type="checkbox" style="width:auto;" value="${b.id}"> ${esc(b.name)}</label>`).join("")}
+            ${BRANCHES.map(b => `<label class="row" style="margin-bottom:4px;"><input type="checkbox" style="width:auto;" value="${b.id}" onchange="refreshStationHints()"> ${esc(b.name)}</label>`).join("")}
           </div>
         </div>
         <div>
@@ -479,7 +528,16 @@ async function renderInstructions() {
           </div>
         </div>
       </div>
+      <div id="stationPickerWrap" style="display:none;margin-bottom:10px;">
+        <div class="row" style="justify-content:space-between;margin-bottom:6px;">
+          <span class="muted" style="font-size:12.5px;">עמדות בסניף שנבחר (רשות - לציון עמדה ספציפית)</span>
+          <button class="secondary" style="padding:3px 10px;font-size:11.5px;" onclick="toggleAllCheckboxes('instrStationList')">בחר הכל</button>
+        </div>
+        <div id="instrStationList" style="max-height:140px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:8px;"></div>
+        <div class="row" style="margin-top:6px;"><button type="button" class="secondary" onclick="addSelectedStationsToText()">הוסף עמדות שנבחרו לתוכן ההוראה</button></div>
+      </div>
       <textarea id="instrText" placeholder="תוכן ההוראה... (אותה הוראה תישלח לכל הצירופים שבחרתם)" rows="3"></textarea>
+      <div id="phraseHints" style="margin-top:6px;"></div>
       <div class="row" style="margin-top:8px;"><button onclick="sendInstruction()" ${workers.length ? "" : "disabled"}>שליחה</button></div>
       <div id="instrStatus" class="status-line"></div>
     </div>
@@ -488,11 +546,54 @@ async function renderInstructions() {
       <td>${esc(i.text)}</td><td><span class="badge ${i.status === 'pending' ? 'pending' : 'done'}">${i.status === 'pending' ? 'ממתין' : 'טופל'}</span></td>
       <td>${i.email_sent ? "✔" : "-"}</td><td class="muted">${fmtDate(i.created_at)}</td></tr>`).join("") || "<tr><td colspan='6' class='muted'>אין הוראות עדיין</td></tr>"}
     </tbody></table></div>`;
+  loadPhraseHints();
 }
 function toggleAllCheckboxes(containerId) {
   const boxes = document.querySelectorAll(`#${containerId} input[type=checkbox]`);
   const allAlreadyChecked = Array.from(boxes).every(b => b.checked);
   boxes.forEach(b => { b.checked = !allAlreadyChecked; });
+}
+// כשנבחר סניף בודד (ולא כמה/אף אחד), מציגים את רשימת העמדות שלו לבחירה - "בחר הכל" או עמדות
+// בודדות, בדיוק כמו הבחירה של סניפים/עובדים למעלה (ר' משוב המשתמש).
+async function refreshStationHints() {
+  const branchIds = Array.from(document.querySelectorAll("#instrBranchList input:checked")).map(b => Number(b.value));
+  const wrap = document.getElementById("stationPickerWrap");
+  const list = document.getElementById("instrStationList");
+  if (branchIds.length !== 1) { wrap.style.display = "none"; list.innerHTML = ""; return; }
+  const data = await api(`/api/branches/${branchIds[0]}/stations`);
+  if (!data.stations.length) { wrap.style.display = "none"; list.innerHTML = ""; return; }
+  list.innerHTML = data.stations.map(s => `<label class="row" style="margin-bottom:4px;">
+    <input type="checkbox" style="width:auto;" value="${safeStr(s.number)}"> עמדה ${esc(s.number)}${s.group_label ? " - " + esc(s.group_label) : ""}
+  </label>`).join("");
+  wrap.style.display = "";
+}
+function addSelectedStationsToText() {
+  const nums = Array.from(document.querySelectorAll("#instrStationList input:checked")).map(b => b.value);
+  if (!nums.length) return;
+  const ta = document.getElementById("instrText");
+  const prefix = nums.length === 1 ? `עמדה ${nums[0]}` : `עמדות ${nums.join(", ")}`;
+  ta.value = ta.value.trim() ? `${prefix} - ${ta.value.trim()}` : `${prefix} - `;
+  ta.focus();
+}
+// מילון ביטויים שמורים - לחיצה על ביטוי מוסיפה אותו לתוכן ההוראה, כדי לא להקליד שוב ביטויים
+// קצרים שחוזרים על עצמם (ר' משוב המשתמש).
+let INSTRUCTION_PHRASES = [];
+async function loadPhraseHints() {
+  const el = document.getElementById("phraseHints");
+  if (!el) return;
+  try {
+    const data = await api("/api/instruction-phrases");
+    INSTRUCTION_PHRASES = data.phrases;
+    el.innerHTML = INSTRUCTION_PHRASES.length
+      ? `<span class="muted" style="font-size:12.5px;">ביטויים שמורים (לחצו להוספה):</span> ` +
+        INSTRUCTION_PHRASES.map(p => `<button type="button" class="secondary" style="padding:2px 8px;font-size:11.5px;margin:2px;" onclick="insertPhraseIntoText('${safeStr(p.text)}')">${esc(p.text)}</button>`).join("")
+      : "";
+  } catch (e) { /* לא קריטי אם נכשל - הטופס עדיין עובד עם טקסט חופשי */ }
+}
+function insertPhraseIntoText(text) {
+  const ta = document.getElementById("instrText");
+  ta.value = ta.value.trim() ? `${ta.value.trim()} - ${text}` : text;
+  ta.focus();
 }
 async function sendInstruction() {
   const branchIds = Array.from(document.querySelectorAll("#instrBranchList input:checked")).map(b => Number(b.value));
@@ -504,6 +605,12 @@ async function sendInstruction() {
   try {
     const res = await api("/api/instructions", { method: "POST", body: { branchIds, workerUserIds, text } });
     statusEl.textContent = `נוצרו ${res.created} הוראות (${res.emailsSent} נשלחו במייל בהצלחה).`; statusEl.className = "status-line ok";
+    // הצעה לשמור ביטוי קצר וחדש למילון לשימוש מהיר בפעם הבאה (ר' משוב המשתמש).
+    if (text.length <= 40 && !INSTRUCTION_PHRASES.some(p => p.text === text)) {
+      if (confirm(`לשמור את "${text}" למילון הביטויים לשימוש מהיר בפעם הבאה?`)) {
+        await api("/api/instruction-phrases", { method: "POST", body: { text } });
+      }
+    }
     renderInstructions();
   } catch (e) { statusEl.textContent = e.message; statusEl.className = "status-line err"; }
 }
@@ -785,6 +892,9 @@ async function openChat(branchId, workerId) {
   const data = await api(`/api/chat/${branchId}/${workerId}`);
   const area = document.getElementById("chatArea") || document.getElementById("mainArea");
   area.innerHTML = `<div class="card">
+    ${ME.role === "admin" ? `<div class="row" style="justify-content:flex-end;margin-bottom:8px;">
+      <button class="secondary" onclick="markChatPending(${branchId}, ${workerId})">🔖 סמן כממתין לטיפול (כמו לא-נקרא)</button>
+    </div>` : ""}
     <div id="chatMessages" style="max-height:400px;overflow-y:auto;display:flex;flex-direction:column;margin-bottom:12px;">
       ${data.messages.map(m => `<div class="msg ${m.sender_user_id === ME.id ? 'mine' : 'theirs'}">
         ${esc(m.text)}<div class="meta">${esc(m.sender_name)} · ${fmtDate(m.created_at)}
@@ -794,6 +904,12 @@ async function openChat(branchId, workerId) {
       <button onclick="sendChat(${branchId},${workerId})">שליחה</button></div>
   </div>`;
   area.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+// משאיר את השרשור כ"ממתין לטיפול המשך" - מחזיר את התג האדום (לא-נקרא) ברשימת השרשורים, בלי
+// למחוק כלום, גם אחרי שכבר נקרא (ר' משוב המשתמש).
+async function markChatPending(branchId, workerId) {
+  await api(`/api/chat/${branchId}/${workerId}/mark-pending`, { method: "PUT" });
+  renderChatThreads();
 }
 async function deleteChatMessage(id, branchId, workerId) {
   if (!confirm("למחוק את ההודעה?")) return;

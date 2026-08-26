@@ -163,6 +163,26 @@ db.exec(`
     updated_at TEXT DEFAULT (datetime('now'))
   );
 
+  -- עמדות מחשב (תחנות עבודה) בתוך סניף - מספר עמדה + קבוצה/אגף אופציונלי (למשל "נשים תלמוד
+  -- בבלי", לסניפים שמתחלקים לכמה קבוצות מחשבים) - כדי לשלוח הוראת תחזוקה/ניקיון לעמדה ספציפית
+  -- בתוך הסניף, לא רק לסניף כולו (ר' משוב המשתמש).
+  CREATE TABLE IF NOT EXISTS stations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    branch_id INTEGER NOT NULL REFERENCES branches(id),
+    number TEXT NOT NULL,              -- מספר/תווית העמדה, למשל "3" או "עמדה 7"
+    group_label TEXT,                  -- קבוצה/אגף אופציונלי, למשל "נשים תלמוד בבלי"
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  -- מילון ביטויים שמורים לשדה "תוכן ההוראה" (טקסט חופשי) - שומרים ביטויים קצרים שחוזרים על עצמם
+  -- כדי להציע אותם מהר בפעם הבאה במקום להקליד מחדש (ר' משוב המשתמש).
+  CREATE TABLE IF NOT EXISTS instruction_phrases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text TEXT UNIQUE NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
   -- התראות למנהלים (פעמון/באדג' באתר) - נוצרת אוטומטית על כל דיווח חדש.
   CREATE TABLE IF NOT EXISTS notifications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
