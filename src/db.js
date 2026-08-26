@@ -242,16 +242,63 @@ if (branchCount === 0) {
   for (const [name, address] of seedBranches) insertBranch.run(name, address);
 }
 
-// זריעת עמדות ראשוניות לסניף "תלמוד בבלי" מהנתונים שהמשתמש כבר העתיק והדביק בשיחה - כדי שלא
-// יצטרך להקליד אותן ידנית דרך הטופס. רק אם לסניף הזה עדיין אין אף עמדה (לא לשכפל אם כבר הוזנו/נערכו
-// ידנית). קבוצה 1 = בלי תיוג (7 עמדות), קבוצה 2 = "נשים תלמוד בבלי" (6 עמדות).
-const bavliBranch = db.prepare("SELECT id FROM branches WHERE name = ?").get("רמה ד' 3 - תלמוד בבלי");
-if (bavliBranch) {
-  const bavliStationCount = db.prepare("SELECT COUNT(*) AS c FROM stations WHERE branch_id = ?").get(bavliBranch.id).c;
-  if (bavliStationCount === 0) {
-    const insertStation = db.prepare("INSERT INTO stations (branch_id, number, group_label) VALUES (?, ?, ?)");
-    for (const n of ["1", "2", "3", "4", "5", "6", "7"]) insertStation.run(bavliBranch.id, n, null);
-    for (const n of ["1", "2", "3", "4", "5", "6"]) insertStation.run(bavliBranch.id, n, "נשים תלמוד בבלי");
+// תיקון: עמדות "תלמוד בבלי" שנזרעו בגרסה קודמת עם group_label ריק - עכשיו שיש נתון מלא יותר,
+// מסתבר שהיה להן שם קבוצה ("גברים תלמוד בבלי") שפשוט לא הגיע בהדבקה הראשונה. UPDATE בטוח להרצה חוזרת.
+db.exec(`
+  UPDATE stations SET group_label = 'גברים תלמוד בבלי'
+  WHERE group_label IS NULL AND branch_id = (SELECT id FROM branches WHERE name = 'רמה ד'' 3 - תלמוד בבלי')
+`);
+
+// זריעת עמדות ראשוניות מהנתונים שהמשתמש העתיק והדביק בשיחה (צילומי מסך של מערכת חיצונית) - כדי
+// שלא יצטרך להקליד אותן ידנית. לכל סניף: רק אם עדיין אין לו אף עמדה (לא לשכפל/לדרוס עריכה ידנית).
+// **חלקי בכוונה** - כמה סניפים בצילומי המסך לא זוהו בוודאות (למשל "מגן הרמה" ושני "נהרדעא" שונים)
+// ולא נכללו כאן - ר' השיחה עם המשתמש לבירור לפני שמוסיפים אותם.
+const stationSeedData = {
+  "רמה ג' 2 - אלישע הנביא": [
+    { group: "גברים אלישע", numbers: ["2", "3", "4", "5", "7", "8"] },
+    { group: "נשים אלישע", numbers: ["2", "3", "4", "5", "6"] },
+  ],
+  "רמה ד' 4 - חלקיה בר\"ט": [
+    { group: "גברים רב חלקיה בר טוביה ד4", numbers: ["1", "2", "3", "4", "5", "6", "עמדה 7"] },
+    { group: "נשים רב חלקיה בר טוביה", numbers: ["עמדה 1", "עמדה 2", "עמדה 3", "עמדה 4", "עמדה 5 זוגות"] },
+  ],
+  "רמה ד' 1 - מר עוקבא": [
+    { group: "גברים מר עוקבא ד2", numbers: ["1", "2", "3", "4", "5", "6", "7", "8"] },
+    { group: "נשים מר עוקבא", numbers: ["עמדה 1", "עמדה 2", "עמדה 3", "עמדה 4"] },
+  ],
+  "רמה ג' 2 - מרים הנביאה": [
+    { group: "גברים ג2 מרים הנביאה", numbers: ["1", "2", "3", "4", "5", "6", "7", "8", "9"] },
+    { group: "נשים ג2 מרים הנביאה", numbers: ["1", "2", "3", "4", "5"] },
+  ],
+  "רמה ד' 1 - רב חנן": [
+    { group: "גברים רב חנן", numbers: ["1", "2", "3", "4", "5", "6"] },
+    { group: "נשים רב חנן", numbers: ["1", "2", "3", "4", "זוגות 5"] },
+  ],
+  "רמה ד' 1 - רב זירא": [
+    { group: "גברים רבי זירא", numbers: ["1", "2", "3", "4", "5", "6", "7"] },
+    { group: "נשים רבי זירא", numbers: ["1", "2", "3", "4", "4"] },
+  ],
+  "רמה ב'": [
+    { group: "גברים ריב\"ל", numbers: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "עמדה מהירה"] },
+    { group: "נשים ריב\"ל", numbers: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "זוגי 1", "זוגי 2"] },
+  ],
+  "רמה ד' 1 - ריש לקיש": [
+    { group: "גברים ד2 ריש לקיש", numbers: ["1", "2", "3", "4", "5", "6", "7", "8", "טאבלט ריש לקיש"] },
+    { group: "נשים ד2 ריש לקיש", numbers: ["2", "3", "4", "5", "6"] },
+  ],
+  "רמה ד' 3 - האמוראים": [
+    { group: "גברים ד3 האמוראים", numbers: ["1", "2", "3", "4", "5"] },
+    { group: "נשים ד3 האמוראים", numbers: ["1", "2", "3", "4", "זוגות 1", "זוגות 2"] },
+  ],
+};
+for (const [branchName, groups] of Object.entries(stationSeedData)) {
+  const branch = db.prepare("SELECT id FROM branches WHERE name = ?").get(branchName);
+  if (!branch) continue;
+  const existingCount = db.prepare("SELECT COUNT(*) AS c FROM stations WHERE branch_id = ?").get(branch.id).c;
+  if (existingCount > 0) continue;
+  const insertStation = db.prepare("INSERT INTO stations (branch_id, number, group_label) VALUES (?, ?, ?)");
+  for (const g of groups) {
+    for (const n of g.numbers) insertStation.run(branch.id, n, g.group);
   }
 }
 
