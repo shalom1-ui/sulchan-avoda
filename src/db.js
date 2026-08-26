@@ -242,6 +242,19 @@ if (branchCount === 0) {
   for (const [name, address] of seedBranches) insertBranch.run(name, address);
 }
 
+// זריעת עמדות ראשוניות לסניף "תלמוד בבלי" מהנתונים שהמשתמש כבר העתיק והדביק בשיחה - כדי שלא
+// יצטרך להקליד אותן ידנית דרך הטופס. רק אם לסניף הזה עדיין אין אף עמדה (לא לשכפל אם כבר הוזנו/נערכו
+// ידנית). קבוצה 1 = בלי תיוג (7 עמדות), קבוצה 2 = "נשים תלמוד בבלי" (6 עמדות).
+const bavliBranch = db.prepare("SELECT id FROM branches WHERE name = ?").get("רמה ד' 3 - תלמוד בבלי");
+if (bavliBranch) {
+  const bavliStationCount = db.prepare("SELECT COUNT(*) AS c FROM stations WHERE branch_id = ?").get(bavliBranch.id).c;
+  if (bavliStationCount === 0) {
+    const insertStation = db.prepare("INSERT INTO stations (branch_id, number, group_label) VALUES (?, ?, ?)");
+    for (const n of ["1", "2", "3", "4", "5", "6", "7"]) insertStation.run(bavliBranch.id, n, null);
+    for (const n of ["1", "2", "3", "4", "5", "6"]) insertStation.run(bavliBranch.id, n, "נשים תלמוד בבלי");
+  }
+}
+
 // זריעת שני חשבונות מנהל ברירת מחדל, רק אם אין עדיין אף מנהל - כדי לאפשר כניסה ראשונה לאתר.
 // **חשוב**: קוד ברירת המחדל (0000) חייב להתחלף מיד אחרי הכניסה הראשונה (ר' README).
 const adminCount = db.prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'admin'").get().c;
