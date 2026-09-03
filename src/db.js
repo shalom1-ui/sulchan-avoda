@@ -221,6 +221,11 @@ for (const alterSql of [
   "ALTER TABLE reports ADD COLUMN needs_followup INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE users ADD COLUMN reset_code_hash TEXT",
   "ALTER TABLE users ADD COLUMN reset_code_expires_at TEXT",
+  // צירוף תמונה/וידאו להודעת צ'אט (כמו וואטסאפ) - ר' routes/chat.js. אופציונלי, אותו דפוס BLOB
+  // כמו טבלת documents.
+  "ALTER TABLE chat_messages ADD COLUMN attachment_data BLOB",
+  "ALTER TABLE chat_messages ADD COLUMN attachment_mime TEXT",
+  "ALTER TABLE chat_messages ADD COLUMN attachment_filename TEXT",
 ]) {
   try {
     db.exec(alterSql);

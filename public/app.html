@@ -949,13 +949,101 @@ async function openChat(branchId, workerId) {
     </div>` : ""}
     <div id="chatMessages" style="max-height:400px;overflow-y:auto;display:flex;flex-direction:column;margin-bottom:12px;">
       ${data.messages.map(m => `<div class="msg ${m.sender_user_id === ME.id ? 'mine' : 'theirs'}">
-        ${esc(m.text)}<div class="meta">${esc(m.sender_name)} · ${fmtDate(m.created_at)}
+        ${m.text ? esc(m.text) : ""}
+        ${m.has_attachment ? `<div class="chat-attachment" data-msg-id="${m.id}" data-mime="${esc(m.attachment_mime || "")}" style="margin-top:${m.text ? "8px" : "0"};">
+          <span class="muted" style="font-size:12px;">⏳ ${esc(m.attachment_filename || "קובץ")}</span>
+        </div>` : ""}
+        <div class="meta">${esc(m.sender_name)} · ${fmtDate(m.created_at)}
           ${ME.role === "admin" || m.sender_user_id === ME.id ? `<span style="cursor:pointer;margin-inline-start:6px;" onclick="deleteChatMessage(${m.id}, ${branchId}, ${workerId})">🗑️</span>` : ""}</div></div>`).join("") || "<div class='muted'>אין הודעות עדיין</div>"}
     </div>
-    <div class="row"><input id="chatInput" placeholder="הודעה..." style="flex:1;" onkeydown="if(event.key==='Enter')sendChat(${branchId},${workerId})">
-      <button onclick="sendChat(${branchId},${workerId})">שליחה</button></div>
+    <div id="chatDropZone" class="row" style="border:1px dashed transparent;border-radius:10px;transition:border-color .15s;">
+      <input type="file" id="chatFileInput" accept="image/*,video/*" style="display:none;" onchange="sendChatAttachment(${branchId},${workerId})">
+      <button type="button" class="secondary" title="צירוף תמונה/וידאו" onclick="document.getElementById('chatFileInput').click()">📎</button>
+      <input id="chatInput" placeholder="הודעה... (או גררו לכאן תמונה/וידאו)" style="flex:1;" onkeydown="if(event.key==='Enter')sendChat(${branchId},${workerId})">
+      <button onclick="sendChat(${branchId},${workerId})">שליחה</button>
+    </div>
+    <div id="chatAttachStatus" class="status-line"></div>
   </div>`;
   area.scrollIntoView({ behavior: "smooth", block: "start" });
+  loadChatAttachments();
+  setupChatDropZone(branchId, workerId);
+}
+// גרירה-ושחרור של קובץ ישירות מהמחשב/גלריה לתוך אזור השיחה, בלי לעבור דרך דיאלוג "בחירת קובץ"
+// (ר' משוב המשתמש: "לגרור תמונה או סרטון בלי לייבא מתיקייה"). אותו נתיב שליחה כמו 📎.
+function setupChatDropZone(branchId, workerId) {
+  const zone = document.getElementById("chatDropZone");
+  if (!zone) return;
+  let dragCounter = 0;
+  zone.addEventListener("dragenter", (e) => {
+    e.preventDefault();
+    dragCounter++;
+    zone.style.borderColor = "var(--accent)";
+  });
+  zone.addEventListener("dragover", (e) => e.preventDefault());
+  zone.addEventListener("dragleave", () => {
+    dragCounter = Math.max(0, dragCounter - 1);
+    if (dragCounter === 0) zone.style.borderColor = "transparent";
+  });
+  zone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dragCounter = 0;
+    zone.style.borderColor = "transparent";
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+      const statusEl = document.getElementById("chatAttachStatus");
+      statusEl.textContent = "אפשר לגרור רק תמונה או וידאו"; statusEl.className = "status-line err";
+      return;
+    }
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    document.getElementById("chatFileInput").files = dt.files;
+    sendChatAttachment(branchId, workerId);
+  });
+}
+// טוען בפועל את הבייטים של כל קובץ מצורף בשרשור הפתוח (lazy - לא הגיעו ב-GET הרשימה, ר' routes/chat.js)
+// ומציג תמונה/וידאו מוטמע, או קישור הורדה לכל סוג קובץ אחר.
+async function loadChatAttachments() {
+  const nodes = document.querySelectorAll("#chatMessages .chat-attachment");
+  for (const node of nodes) {
+    const id = node.dataset.msgId;
+    const mime = node.dataset.mime || "";
+    try {
+      const res = await fetch(`/api/chat/message/${id}/attachment`, { headers: { Authorization: "Bearer " + TOKEN } });
+      if (!res.ok) throw new Error();
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      if (mime.startsWith("image/")) node.innerHTML = `<img src="${url}" style="max-width:220px;max-height:220px;border-radius:8px;display:block;cursor:pointer;" onclick="window.open('${url}','_blank')">`;
+      else if (mime.startsWith("video/")) node.innerHTML = `<video src="${url}" controls style="max-width:260px;max-height:260px;border-radius:8px;display:block;"></video>`;
+      else node.innerHTML = `<a href="${url}" target="_blank" class="muted">📎 קובץ מצורף - פתיחה</a>`;
+    } catch (e) { node.innerHTML = `<span class="muted">שגיאה בטעינת הקובץ המצורף</span>`; }
+  }
+}
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+async function sendChatAttachment(branchId, workerId) {
+  const fileInput = document.getElementById("chatFileInput");
+  const file = fileInput.files[0];
+  if (!file) return;
+  const statusEl = document.getElementById("chatAttachStatus");
+  if (file.size > 12 * 1024 * 1024) { statusEl.textContent = "הקובץ גדול מדי (מקסימום 12MB)"; statusEl.className = "status-line err"; fileInput.value = ""; return; }
+  const textInput = document.getElementById("chatInput");
+  const text = textInput.value.trim();
+  statusEl.textContent = "מעלה קובץ..."; statusEl.className = "status-line";
+  try {
+    const data_base64 = await readFileAsBase64(file);
+    await api(`/api/chat/${branchId}/${workerId}`, { method: "POST", body: {
+      text, attachment: { data_base64, filename: file.name, mime_type: file.type },
+    }});
+    textInput.value = ""; fileInput.value = "";
+    openChat(branchId, workerId);
+  } catch (e) { statusEl.textContent = e.message; statusEl.className = "status-line err"; }
 }
 // משאיר את השרשור כ"ממתין לטיפול המשך" - מחזיר את התג האדום (לא-נקרא) ברשימת השרשורים, בלי
 // למחוק כלום, גם אחרי שכבר נקרא (ר' משוב המשתמש).
@@ -1174,9 +1262,31 @@ async function renderMyInstructions() {
   const data = await api("/api/instructions");
   main.innerHTML = `<div class="card"><table><thead><tr><th>סניף</th><th>הוראה</th><th>סטטוס</th><th>מתי</th></tr></thead>
     <tbody>${data.instructions.map(i => `<tr><td>${esc(i.branch_name)}</td><td>${esc(i.text)}</td>
-      <td><span class="badge ${i.status === 'pending' ? 'pending' : 'done'}">${i.status === 'pending' ? 'ממתין' : 'טופל'}</span></td>
+      <td>${i.status === 'pending' ? `
+        <label class="row" style="gap:6px;flex-wrap:nowrap;white-space:nowrap;">
+          <input type="checkbox" style="width:auto;" onchange="markInstructionDone(${i.id}, ${i.branch_id}, this)"> בוצע
+        </label>
+        <input id="instrNoteInput_${i.id}" placeholder="הערה (רשות)" style="margin-top:6px;font-size:12.5px;padding:6px 8px;">
+      ` : `<span class="badge done">✔ טופל</span>`}</td>
       <td class="muted">${fmtDate(i.created_at)}</td></tr>`).join("") || "<tr><td colspan='4' class='muted'>אין הוראות עדיין</td></tr>"}
     </tbody></table></div>`;
+}
+// סימון מהיר של הוראה כבוצעה - צ'קבוקס אחד + הערה אופציונלית, בלי לעבור לטופס "דיווח" נפרד
+// (ר' משוב המשתמש). משתמש בנתיב הדיווחים הקיים (POST /api/reports עם instructionId) שכבר מעדכן
+// את סטטוס ההוראה ל-done ושולח התראה/מייל למנהלים.
+async function markInstructionDone(instructionId, branchId, checkboxEl) {
+  if (!checkboxEl.checked) return;
+  const noteInput = document.getElementById(`instrNoteInput_${instructionId}`);
+  const noteText = noteInput ? noteInput.value.trim() : "";
+  checkboxEl.disabled = true;
+  try {
+    await api("/api/reports", { method: "POST", body: { branchId, instructionId, statusCode: "done", noteText: noteText || undefined } });
+    renderMyInstructions();
+  } catch (e) {
+    alert(e.message);
+    checkboxEl.checked = false;
+    checkboxEl.disabled = false;
+  }
 }
 
 // ---------- עובד: דיווח ----------

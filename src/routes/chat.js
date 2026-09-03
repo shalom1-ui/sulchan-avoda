@@ -2,17 +2,36 @@
 // היא שרשור אחד; כל מנהל יכול לראות ולהשיב בכל שרשור.
 "use strict";
 const db = require("../db");
-const { json } = require("../router");
+const { json, raw } = require("../router");
 const { requireAuth, requireAdmin } = require("../middleware/auth");
 const { createNotification } = require("../lib/notify");
 const { sendEmail } = require("../services/email");
 
-// יוצר רשומת הודעת צ'אט בודדת בשרשור (סניף, עובד) - בלי לשלוח מייל (המייל, כשצריך, נשלח בנפרד
-// ע"י הקורא - ר' POST /api/chat/:branchId/:workerId למטה ו-POST /api/chat/bulk).
-function insertChatMessage(branchId, workerId, senderUserId, text) {
+// גודל מקסימלי לקובץ מצורף (תמונה/וידאו) - 12MB לפני base64 (מתנפח לכ-16MB מקודד, מתחת למגבלת
+// גוף הבקשה הכוללת של 20MB, ר' router.js). מספיק בנוחות לתמונת טלפון; וידאו ארוך לא יעבור.
+const MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024;
+
+function decodeAttachment(attachment) {
+  if (!attachment || !attachment.data_base64) return null;
+  const base64Only = String(attachment.data_base64).includes(",")
+    ? String(attachment.data_base64).split(",").pop()
+    : attachment.data_base64;
+  const buffer = Buffer.from(base64Only, "base64");
+  if (buffer.length > MAX_ATTACHMENT_BYTES) {
+    const err = new Error(`הקובץ גדול מדי (מקסימום ${MAX_ATTACHMENT_BYTES / 1024 / 1024}MB)`);
+    err.isAttachmentTooLarge = true;
+    throw err;
+  }
+  return { data: buffer, mime: attachment.mime_type || "application/octet-stream", filename: attachment.filename || "קובץ" };
+}
+
+// יוצר רשומת הודעת צ'אט בודדת בשרשור (סניף, עובד), עם צירוף אופציונלי (תמונה/וידאו) - בלי לשלוח
+// מייל (המייל, כשצריך, נשלח בנפרד ע"י הקורא - ר' POST /api/chat/:branchId/:workerId למטה ו-POST
+// /api/chat/bulk).
+function insertChatMessage(branchId, workerId, senderUserId, text, attachment = null) {
   const info = db.prepare(
-    "INSERT INTO chat_messages (branch_id, worker_user_id, sender_user_id, text) VALUES (?, ?, ?, ?)"
-  ).run(branchId, workerId, senderUserId, text);
+    "INSERT INTO chat_messages (branch_id, worker_user_id, sender_user_id, text, attachment_data, attachment_mime, attachment_filename) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  ).run(branchId, workerId, senderUserId, text, attachment ? attachment.data : null, attachment ? attachment.mime : null, attachment ? attachment.filename : null);
   return Number(info.lastInsertRowid);
 }
 
@@ -39,8 +58,13 @@ function register(router) {
     if (ctx.user.role !== "admin" && Number(ctx.user.userId) !== Number(ctx.params.workerId)) {
       return json(ctx.res, 403, { error: "אין הרשאה" });
     }
+    // לא שולפים את attachment_data (ה-BLOB) כאן - היה מנפח כל תגובה עם כל התמונות/סרטונים של כל
+    // ההיסטוריה. attachment_mime/attachment_filename מספיקים לתצוגה; הבייטים עצמם נטענים בנפרד
+    // ורק לפי דרישה דרך GET /api/chat/message/:id/attachment (ר' openChat/loadChatAttachments).
     const rows = db.prepare(
-      `SELECT cm.*, u.full_name AS sender_name, u.role AS sender_role
+      `SELECT cm.id, cm.branch_id, cm.worker_user_id, cm.sender_user_id, cm.text, cm.read_at, cm.created_at,
+              cm.attachment_mime, cm.attachment_filename, (cm.attachment_data IS NOT NULL) AS has_attachment,
+              u.full_name AS sender_name, u.role AS sender_role
        FROM chat_messages cm JOIN users u ON u.id = cm.sender_user_id
        WHERE cm.branch_id = ? AND cm.worker_user_id = ? ORDER BY cm.created_at ASC`
     ).all(ctx.params.branchId, ctx.params.workerId);
@@ -54,9 +78,16 @@ function register(router) {
     if (ctx.user.role !== "admin" && Number(ctx.user.userId) !== Number(ctx.params.workerId)) {
       return json(ctx.res, 403, { error: "אין הרשאה" });
     }
-    const { text } = ctx.body;
-    if (!text || !text.trim()) return json(ctx.res, 400, { error: "הודעה ריקה" });
-    const newId = insertChatMessage(ctx.params.branchId, ctx.params.workerId, ctx.user.userId, text.trim());
+    const { text, attachment: attachmentInput } = ctx.body;
+    let attachment;
+    try {
+      attachment = decodeAttachment(attachmentInput);
+    } catch (e) {
+      return json(ctx.res, e.isAttachmentTooLarge ? 413 : 400, { error: e.message });
+    }
+    const trimmedText = text ? text.trim() : "";
+    if (!trimmedText && !attachment) return json(ctx.res, 400, { error: "הודעה ריקה" });
+    const newId = insertChatMessage(ctx.params.branchId, ctx.params.workerId, ctx.user.userId, trimmedText, attachment);
     const info = { lastInsertRowid: newId };
 
     const branch = db.prepare("SELECT name FROM branches WHERE id = ?").get(ctx.params.branchId);
@@ -70,11 +101,11 @@ function register(router) {
       createNotification("new_chat_message", Number(info.lastInsertRowid), `הודעה חדשה מ-${worker.full_name} (${branch.name})`);
       const admins = db.prepare("SELECT email FROM users WHERE role = 'admin' AND email IS NOT NULL AND active = 1").all();
       for (const admin of admins) {
-        sendEmail({ to: admin.email, subject: `הודעת צ'אט חדשה - ${branch.name}`, body: `${worker.full_name} כתב/ה ב-${branch.name}:\n\n${text.trim()}` })
+        sendEmail({ to: admin.email, subject: `הודעת צ'אט חדשה - ${branch.name}`, body: `${worker.full_name} כתב/ה ב-${branch.name}:\n\n${trimmedText || "(צורף קובץ בלי טקסט)"}` })
           .catch((e) => console.error("שליחת מייל צ'אט (עובד->מנהל) נכשלה:", e.message));
       }
     } else if (worker.email) {
-      sendEmail({ to: worker.email, subject: `הודעה חדשה - ${branch.name}`, body: `הודעה חדשה מהמנהל לגבי ${branch.name}:\n\n${text.trim()}` })
+      sendEmail({ to: worker.email, subject: `הודעה חדשה - ${branch.name}`, body: `הודעה חדשה מהמנהל לגבי ${branch.name}:\n\n${trimmedText || "(צורף קובץ בלי טקסט)"}` })
         .catch((e) => console.error("שליחת מייל צ'אט (מנהל->עובד) נכשלה:", e.message));
     }
     return json(ctx.res, 201, { id: Number(info.lastInsertRowid) });
@@ -128,6 +159,17 @@ function register(router) {
     }
     if (!createdCount) return json(ctx.res, 404, { error: "לא נמצאו עובדים/סניפים תקינים" });
     return json(ctx.res, 201, { created: createdCount, emailsSent });
+  }));
+
+  // הורדת/הצגת קובץ מצורף להודעת צ'אט - אותה הרשאה כמו קריאת השרשור עצמו (מנהל, או העובד שהשרשור
+  // שלו). ה-frontend קורא לזה כדי לבנות blob URL לתצוגה מוטמעת (ר' openChat / loadChatAttachments).
+  router.get("/api/chat/message/:id/attachment", requireAuth(async (ctx) => {
+    const msg = db.prepare("SELECT * FROM chat_messages WHERE id = ?").get(ctx.params.id);
+    if (!msg || !msg.attachment_data) return json(ctx.res, 404, { error: "אין קובץ מצורף" });
+    if (ctx.user.role !== "admin" && Number(ctx.user.userId) !== msg.worker_user_id) {
+      return json(ctx.res, 403, { error: "אין הרשאה" });
+    }
+    return raw(ctx.res, 200, msg.attachment_data, { contentType: msg.attachment_mime || "application/octet-stream", filename: msg.attachment_filename });
   }));
 
   // סימון שרשור כ"ממתין לטיפול המשך" - מחזיר את ההודעה האחרונה מהעובד למצב לא-נקרא (read_at=NULL),

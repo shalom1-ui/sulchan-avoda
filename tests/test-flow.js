@@ -170,6 +170,32 @@ async function main() {
   const workerCannotMarkPending = await call(`/api/chat/${branchId}/${workerId}/mark-pending`, { method: "PUT", token: workerToken });
   ok(workerCannotMarkPending.status === 403, "עובד לא יכול לסמן שרשור כממתין לטיפול (מוגבל למנהלים)");
 
+  // --- צירוף תמונה/וידאו להודעת צ'אט (כמו וואטסאפ) ---
+  const tinyPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+  const chatWithImage = await call(`/api/chat/${branchId}/${workerId}`, { method: "POST", token: workerToken, body: {
+    text: "", attachment: { data_base64: tinyPng, filename: "תקלה.png", mime_type: "image/png" },
+  }});
+  ok(chatWithImage.status === 201, "הודעת צ'אט בלי טקסט, עם תמונה מצורפת, נשלחת בהצלחה");
+  const chatAfterImage = await call(`/api/chat/${branchId}/${workerId}`, { token: adminToken });
+  const imageMsg = chatAfterImage.data.messages.find(m => m.id === chatWithImage.data.id);
+  ok(imageMsg && imageMsg.has_attachment && imageMsg.attachment_mime === "image/png" && imageMsg.attachment_filename === "תקלה.png", "רשימת ההודעות מציגה את מטא-הנתונים של הצירוף (בלי הבייטים עצמם)");
+  ok(!("attachment_data" in imageMsg), "ה-BLOB של הצירוף לא חוזר ברשימת ההודעות (רק דרך נתיב ההורדה)");
+
+  const attachmentRes = await fetch(`${base}/api/chat/message/${chatWithImage.data.id}/attachment`, { headers: { Authorization: "Bearer " + adminToken } });
+  const attachmentBuf = Buffer.from(await attachmentRes.arrayBuffer());
+  ok(attachmentRes.status === 200 && attachmentRes.headers.get("content-type") === "image/png" && attachmentBuf.equals(Buffer.from(tinyPng, "base64")), "מנהל מוריד את התמונה המצורפת ומקבל בדיוק את אותם בייטים");
+  const workerAttachmentRes = await fetch(`${base}/api/chat/message/${chatWithImage.data.id}/attachment`, { headers: { Authorization: "Bearer " + workerToken } });
+  ok(workerAttachmentRes.status === 200, "העובד ששלח את התמונה יכול גם הוא להוריד אותה");
+
+  const emptyNoAttachment = await call(`/api/chat/${branchId}/${workerId}`, { method: "POST", token: workerToken, body: { text: "" } });
+  ok(emptyNoAttachment.status === 400, "הודעה בלי טקסט ובלי צירוף נדחית");
+
+  const oversizedBase64 = Buffer.alloc(14 * 1024 * 1024, 1).toString("base64"); // 14MB גולמי > 12MB המותר
+  const oversized = await call(`/api/chat/${branchId}/${workerId}`, { method: "POST", token: workerToken, body: {
+    text: "", attachment: { data_base64: oversizedBase64, filename: "גדול.png", mime_type: "image/png" },
+  }});
+  ok(oversized.status === 413, "קובץ מצורף גדול מדי (מעל 12MB) נדחה עם 413");
+
   // --- מנהל שולח הודעת צ'אט לעובד (כיוון הפוך) - נשלח מייל לעובד (MOCK), לא אמור לזרוק שגיאה ---
   const adminChat = await call(`/api/chat/${branchId}/${workerId}`, { method: "POST", token: adminToken, body: { text: "תודה על העבודה!" } });
   ok(adminChat.status === 201, "מנהל שולח הודעת צ'אט לעובד (עם שליחת מייל ברקע)");
