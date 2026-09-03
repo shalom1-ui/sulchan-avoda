@@ -161,6 +161,23 @@ function register(router) {
     return json(ctx.res, 201, { created: createdCount, emailsSent });
   }));
 
+  // כל הקבצים המצורפים בכל השיחות (מנהל בלבד) - מסך ניהול מדיה כדי לראות מה נשלח ולפנות מקום
+  // בדיסק (ר' משוב המשתמש: "אפשרות להעיף ולמחוק"). מחיקה עצמה דרך DELETE /api/chat/message/:id
+  // הקיים - זה מוחק את כל ההודעה כולל הצירוף.
+  router.get("/api/chat/attachments", requireAdmin(async (ctx) => {
+    const rows = db.prepare(
+      `SELECT cm.id, cm.branch_id, cm.worker_user_id, cm.attachment_mime, cm.attachment_filename, cm.created_at,
+              b.name AS branch_name, u.full_name AS worker_name, sender.full_name AS sender_name
+       FROM chat_messages cm
+       JOIN branches b ON b.id = cm.branch_id
+       JOIN users u ON u.id = cm.worker_user_id
+       JOIN users sender ON sender.id = cm.sender_user_id
+       WHERE cm.attachment_data IS NOT NULL
+       ORDER BY cm.created_at DESC`
+    ).all();
+    return json(ctx.res, 200, { attachments: rows });
+  }));
+
   // הורדת/הצגת קובץ מצורף להודעת צ'אט - אותה הרשאה כמו קריאת השרשור עצמו (מנהל, או העובד שהשרשור
   // שלו). ה-frontend קורא לזה כדי לבנות blob URL לתצוגה מוטמעת (ר' openChat / loadChatAttachments).
   router.get("/api/chat/message/:id/attachment", requireAuth(async (ctx) => {

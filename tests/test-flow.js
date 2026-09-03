@@ -196,6 +196,15 @@ async function main() {
   }});
   ok(oversized.status === 413, "קובץ מצורף גדול מדי (מעל 12MB) נדחה עם 413");
 
+  const workerCannotListMedia = await call("/api/chat/attachments", { token: workerToken });
+  ok(workerCannotListMedia.status === 403, "עובד לא יכול לראות את רשימת המדיה הכללית (מוגבל למנהלים)");
+  const mediaList = await call("/api/chat/attachments", { token: adminToken });
+  ok(mediaList.status === 200 && mediaList.data.attachments.some(a => a.id === chatWithImage.data.id && a.branch_name && a.worker_name), "מנהל רואה את התמונה ברשימת המדיה עם שם סניף ועובד");
+  const deleteMediaItem = await call(`/api/chat/message/${chatWithImage.data.id}`, { method: "DELETE", token: adminToken });
+  ok(deleteMediaItem.status === 200, "מחיקת פריט מדיה (דרך נתיב מחיקת הודעה קיים)");
+  const mediaListAfterDelete = await call("/api/chat/attachments", { token: adminToken });
+  ok(mediaListAfterDelete.status === 200 && !mediaListAfterDelete.data.attachments.some(a => a.id === chatWithImage.data.id), "אחרי המחיקה, הפריט כבר לא ברשימת המדיה");
+
   // --- מנהל שולח הודעת צ'אט לעובד (כיוון הפוך) - נשלח מייל לעובד (MOCK), לא אמור לזרוק שגיאה ---
   const adminChat = await call(`/api/chat/${branchId}/${workerId}`, { method: "POST", token: adminToken, body: { text: "תודה על העבודה!" } });
   ok(adminChat.status === 201, "מנהל שולח הודעת צ'אט לעובד (עם שליחת מייל ברקע)");

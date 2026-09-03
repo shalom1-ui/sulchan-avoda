@@ -861,7 +861,10 @@ async function renderChatThreads() {
     </div>
     <div id="adminChatArea"></div>
 
-    <div style="font-weight:800;font-size:16px;margin:20px 0 8px;">צ'אט עם עובדים</div>
+    <div class="row" style="justify-content:space-between;margin:20px 0 8px;">
+      <div style="font-weight:800;font-size:16px;">צ'אט עם עובדים</div>
+      <button class="secondary" onclick="renderChatMedia()">🖼️ ניהול מדיה שנשלחה</button>
+    </div>
     <div class="card">
       <div style="font-weight:700;margin-bottom:10px;">שיחה חדשה / הודעה חדשה</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:10px;">
@@ -893,6 +896,46 @@ async function renderChatThreads() {
       <td class="muted">${fmtDate(t.last_message_at)}</td><td>${t.unread_count > 0 ? `<span class="badge pending">${t.unread_count}</span>` : "-"}</td>
       <td><button class="secondary" onclick="openChat(${t.branch_id}, ${t.worker_user_id})">פתיחה</button></td></tr>`).join("") || "<tr><td colspan='5' class='muted'>אין שיחות עדיין</td></tr>"}
     </tbody></table></div><div id="chatArea"></div>`;
+}
+// כל התמונות/הסרטונים שנשלחו בכל השיחות במקום אחד, עם אפשרות למחוק - כדי לפנות מקום בדיסק בלי
+// לחפש בכל שרשור בנפרד (ר' משוב המשתמש: "אפשרות להעיף ולמחוק").
+async function renderChatMedia() {
+  const main = document.getElementById("mainArea");
+  const data = await api("/api/chat/attachments");
+  main.innerHTML = `
+    <button class="secondary" onclick="renderChatThreads()">→ חזרה לצ'אט</button>
+    <div style="font-weight:800;font-size:17px;margin:14px 0 4px;">מדיה שנשלחה בצ'אט (${data.attachments.length})</div>
+    <div class="muted" style="margin-bottom:10px;">כל התמונות והסרטונים מכל השיחות. מחיקה כאן מוחקת את ההודעה כולה (בלתי הפיכה).</div>
+    <div id="chatMediaGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;">
+      ${data.attachments.map(a => `<div class="card" style="padding:8px;" data-media-id="${a.id}" data-mime="${esc(a.attachment_mime || "")}">
+        <div class="chat-media-preview muted" style="font-size:11.5px;height:110px;display:flex;align-items:center;justify-content:center;background:var(--surface-2);border-radius:8px;overflow:hidden;">⏳ טוען...</div>
+        <div class="muted" style="font-size:11px;margin-top:6px;">${esc(a.branch_name)} · ${esc(a.worker_name)}</div>
+        <div class="muted" style="font-size:11px;">${fmtDate(a.created_at)}</div>
+        <button class="danger" style="width:100%;margin-top:6px;padding:5px;font-size:12px;" onclick="deleteChatMediaItem(${a.id})">מחיקה</button>
+      </div>`).join("") || "<div class='muted'>עדיין לא נשלחו תמונות/סרטונים</div>"}
+    </div>`;
+  loadChatMediaThumbnails();
+}
+async function loadChatMediaThumbnails() {
+  const nodes = document.querySelectorAll("#chatMediaGrid [data-media-id]");
+  for (const node of nodes) {
+    const id = node.dataset.mediaId;
+    const mime = node.dataset.mime || "";
+    const preview = node.querySelector(".chat-media-preview");
+    try {
+      const res = await fetch(`/api/chat/message/${id}/attachment`, { headers: { Authorization: "Bearer " + TOKEN } });
+      if (!res.ok) throw new Error();
+      const url = URL.createObjectURL(await res.blob());
+      if (mime.startsWith("image/")) preview.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="window.open('${url}','_blank')">`;
+      else if (mime.startsWith("video/")) preview.innerHTML = `<video src="${url}" controls style="width:100%;height:100%;object-fit:cover;"></video>`;
+      else preview.innerHTML = `<a href="${url}" target="_blank">📎 פתיחה</a>`;
+    } catch (e) { preview.textContent = "שגיאה בטעינה"; }
+  }
+}
+async function deleteChatMediaItem(id) {
+  if (!confirm("למחוק את ההודעה הזו (כולל התמונה/הווידאו)? לא ניתן לשחזר.")) return;
+  await api("/api/chat/message/" + id, { method: "DELETE" });
+  renderChatMedia();
 }
 function startAdminChat() {
   const peerId = document.getElementById("newAdminChatPeer").value;
