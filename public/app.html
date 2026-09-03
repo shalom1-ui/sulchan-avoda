@@ -1303,19 +1303,24 @@ async function commitImport() {
 }
 
 // ---------- עובד: ההוראות שלי ----------
+// כל שליחה (גם לכמה סניפים בבת אחת) מוצגת כקבוצה אחת: תוכן ההוראה המלא מופיע פעם אחת למעלה
+// ("הודעה אחת מפורטת"), ומתחתיו שורה נפרדת לכל סניף עם צ'קבוקס "בוצע" משלה (ר' משוב המשתמש).
 async function renderMyInstructions() {
   const main = document.getElementById("mainArea");
   const data = await api("/api/instructions");
-  main.innerHTML = `<div class="card"><table><thead><tr><th>סניף</th><th>הוראה</th><th>סטטוס</th><th>מתי</th></tr></thead>
-    <tbody>${data.instructions.map(i => `<tr><td>${esc(i.branch_name)}</td><td>${esc(i.text)}</td>
-      <td>${i.status === 'pending' ? `
-        <label class="row" style="gap:6px;flex-wrap:nowrap;white-space:nowrap;">
-          <input type="checkbox" style="width:auto;" onchange="markInstructionDone(${i.id}, ${i.branch_id}, this)"> בוצע
-        </label>
-        <input id="instrNoteInput_${i.id}" placeholder="הערה (רשות)" style="margin-top:6px;font-size:12.5px;padding:6px 8px;">
-      ` : `<span class="badge done">✔ טופל</span>`}</td>
-      <td class="muted">${fmtDate(i.created_at)}</td></tr>`).join("") || "<tr><td colspan='4' class='muted'>אין הוראות עדיין</td></tr>"}
-    </tbody></table></div>`;
+  main.innerHTML = data.instructionGroups.map(g => `
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:2px;">📋 ${esc(g.text)}</div>
+      <div class="muted" style="font-size:12px;margin-bottom:10px;">${fmtDate(g.createdAt)} · ${g.doneCount}/${g.totalCount} טופלו</div>
+      <table><thead><tr><th>סניף</th><th>סטטוס</th></tr></thead>
+        <tbody>${g.branches.map(b => `<tr><td>${esc(b.branchName)}</td><td>${b.status === 'pending' ? `
+            <label class="row" style="gap:6px;flex-wrap:nowrap;white-space:nowrap;">
+              <input type="checkbox" style="width:auto;" onchange="markInstructionDone(${b.instructionId}, ${b.branchId}, this)"> בוצע
+            </label>
+            <input id="instrNoteInput_${b.instructionId}" placeholder="הערה (רשות)" style="margin-top:6px;font-size:12.5px;padding:6px 8px;">
+          ` : `<span class="badge done">✔ טופל</span>`}</td></tr>`).join("")}
+        </tbody></table>
+    </div>`).join("") || "<div class='card muted'>אין הוראות עדיין</div>";
 }
 // סימון מהיר של הוראה כבוצעה - צ'קבוקס אחד + הערה אופציונלית, בלי לעבור לטופס "דיווח" נפרד
 // (ר' משוב המשתמש). משתמש בנתיב הדיווחים הקיים (POST /api/reports עם instructionId) שכבר מעדכן

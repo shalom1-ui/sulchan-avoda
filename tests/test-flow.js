@@ -140,7 +140,7 @@ async function main() {
   ok(instr.status === 201, "מנהל שולח הוראה");
 
   const myInstr = await call("/api/instructions", { token: workerToken });
-  ok(myInstr.status === 200 && myInstr.data.instructions.length === 1, "עובד רואה את ההוראה שלו");
+  ok(myInstr.status === 200 && myInstr.data.instructionGroups.length === 1 && myInstr.data.instructionGroups[0].branches.length === 1, "עובד רואה את ההוראה שלו (מקובצת - קבוצה אחת עם סניף אחד)");
 
   const report = await call("/api/reports", { method: "POST", token: workerToken, body: {
     branchId, instructionId: instr.data.id, statusCode: "done", noteText: "נוקה בהצלחה",
@@ -335,6 +335,11 @@ async function main() {
   ok(broadcastGroup.doneCount === 0, "אף אחת מהוראות הקבוצה לא סומנה כטופלה עדיין");
   const singleInstrGroup = instrGroupsRes.data.instructionGroups.find(g => g.branches.length === 1 && g.branches[0].branchId === branchId && g.workerUserId === workerId);
   ok(singleInstrGroup && singleInstrGroup.totalCount === 1, "הוראה בודדת (סניף אחד) עדיין מוצגת כקבוצה משלה, לא מתמזגת עם אחרות");
+
+  // --- אותו קיבוץ גם בתצוגת העובד: "הודעה אחת מפורטת" + שורה נפרדת לכל סניף לסימון (ר' משוב המשתמש) ---
+  const worker2InstrRes = await call("/api/instructions", { token: (await call("/api/login", { method: "POST", body: { username: "worker2", pin: "5678" } })).data.token });
+  const worker2Group = worker2InstrRes.data.instructionGroups.find(g => g.text === "בדיקת שיבוץ לכולם");
+  ok(worker2InstrRes.status === 200 && worker2Group && worker2Group.branches.length === 2 && worker2Group.text === "בדיקת שיבוץ לכולם", "העובד רואה קבוצה אחת עם טקסט ההוראה פעם אחת ושורה לכל סניף");
 
   // --- "בחר הכל" בצ'אט: הודעה חדשה ל-1 עובד × 2 סניפים יוצרת 2 הודעות צ'אט (שרשור נפרד לכל סניף),
   //     אבל מייל מרוכז אחד בלבד (לא מייל נפרד לכל סניף) ---
