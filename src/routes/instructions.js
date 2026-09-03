@@ -1,21 +1,47 @@
 // routes/instructions.js — הוראות שמנהל שולח לעובד לגבי סניף. נשלחות במייל (אם יש לעובד כתובת),
 // ומחכות בשלוחת הטלפון (routes/yemot.js מקריא הוראות pending כשהעובד מתקשר ומזהה את עצמו).
 "use strict";
+const { randomUUID } = require("crypto");
 const db = require("../db");
 const { json } = require("../router");
 const { requireAuth, requireAdmin } = require("../middleware/auth");
 const { sendEmail } = require("../services/email");
 
 function register(router) {
-  // מנהל: כל ההוראות (אפשר לסנן לפי סניף/עובד). עובד: רק ההוראות שלו.
+  // מנהל: כל ההוראות, מקובצות לפי batch_id - כך ששליחה אחת לכמה סניפים מוצגת כשורה אחת (עם רשימת
+  // הסניפים וסיכום סטטוס), לא שורה נפרדת לכל סניף (ר' משוב המשתמש). הוראות ישנות בלי batch_id
+  // (NULL) מוצגות כל אחת כקבוצה בפני עצמה. עובד: עדיין רשימה שטוחה, שורה אחת לכל סניף - כדי
+  // שיוכל לסמן "בוצע" בנפרד לכל סניף (ר' myInstructions/markInstructionDone בפרונט).
   router.get("/api/instructions", requireAuth(async (ctx) => {
     if (ctx.user.role === "admin") {
       const rows = db.prepare(
         `SELECT i.*, b.name AS branch_name, u.full_name AS worker_name
          FROM instructions i JOIN branches b ON b.id = i.branch_id JOIN users u ON u.id = i.worker_user_id
-         ORDER BY i.created_at DESC LIMIT 200`
+         ORDER BY i.created_at DESC LIMIT 500`
       ).all();
-      return json(ctx.res, 200, { instructions: rows });
+      const groups = [];
+      const groupByKey = new Map();
+      for (const row of rows) {
+        // מפתח הקיבוץ הוא batch_id+worker יחד, לא batch_id לבד - כי אותו batch_id יכול לשמש כמה
+        // עובדים בשליחה אחת (ר' POST למטה), וכל עובד צריך שורה נפרדת בתצוגה.
+        const key = row.batch_id ? `${row.batch_id}-${row.worker_user_id}` : `single-${row.id}`;
+        let group = groupByKey.get(key);
+        if (!group) {
+          group = {
+            batchId: row.batch_id, workerUserId: row.worker_user_id, workerName: row.worker_name,
+            text: row.text, createdAt: row.created_at, emailSent: !!row.email_sent, branches: [],
+          };
+          groupByKey.set(key, group);
+          groups.push(group);
+        }
+        group.branches.push({ instructionId: row.id, branchId: row.branch_id, branchName: row.branch_name, status: row.status });
+        if (!row.email_sent) group.emailSent = false;
+      }
+      for (const g of groups) {
+        g.doneCount = g.branches.filter(b => b.status !== "pending").length;
+        g.totalCount = g.branches.length;
+      }
+      return json(ctx.res, 200, { instructionGroups: groups.slice(0, 200) });
     }
     const rows = db.prepare(
       `SELECT i.*, b.name AS branch_name FROM instructions i JOIN branches b ON b.id = i.branch_id
@@ -26,10 +52,10 @@ function register(router) {
 
   // יוצר רשומת הוראה בודדת (סניף אחד + עובד אחד) במסד הנתונים + מוסיף לשרשור הצ'אט - בלי לשלוח מייל
   // (המייל נשלח מרוכז לכל העובד אחרי שכל ההוראות שלו נוצרו - ר' POST /api/instructions למטה).
-  function createOneInstruction(branchId, worker, text, createdByUserId) {
+  function createOneInstruction(branchId, worker, text, createdByUserId, batchId) {
     const info = db.prepare(
-      "INSERT INTO instructions (branch_id, worker_user_id, created_by, text) VALUES (?, ?, ?, ?)"
-    ).run(branchId, worker.id, createdByUserId, text);
+      "INSERT INTO instructions (branch_id, worker_user_id, created_by, text, batch_id) VALUES (?, ?, ?, ?, ?)"
+    ).run(branchId, worker.id, createdByUserId, text, batchId);
     const instructionId = Number(info.lastInsertRowid);
 
     // ההוראה מופיעה גם בשרשור הצ'אט של אותו (סניף, עובד) - כדי שהמנהל והעובד יראו הכל במקום אחד
@@ -57,6 +83,10 @@ function register(router) {
     }
 
     const trimmedText = text.trim();
+    // מזהה משותף לכל ההוראות שנוצרות בקריאה הזו - כדי שהתצוגה למנהל תציג אותן כשורה אחת (ר' GET
+    // /api/instructions למעלה), גם כששולחים לכמה עובדים בבת אחת (לכל עובד אותו batch_id - זה בסדר,
+    // הקיבוץ הוא לפי batch_id+worker_user_id יחד באמצעות ה-JOIN, לא לפי batch_id בלבד).
+    const batchId = randomUUID();
     let createdCount = 0;
     let emailsSent = 0;
     let firstInstructionId = null;
@@ -70,7 +100,7 @@ function register(router) {
       for (const bId of branchIdList) {
         const branch = db.prepare("SELECT * FROM branches WHERE id = ?").get(bId);
         if (!branch) continue;
-        const instructionId = createOneInstruction(bId, worker, trimmedText, ctx.user.userId);
+        const instructionId = createOneInstruction(bId, worker, trimmedText, ctx.user.userId, batchId);
         instructionIds.push(instructionId);
         branchNames.push(branch.name);
         createdCount++;

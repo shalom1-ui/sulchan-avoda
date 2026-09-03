@@ -221,6 +221,12 @@ for (const alterSql of [
   "ALTER TABLE reports ADD COLUMN needs_followup INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE users ADD COLUMN reset_code_hash TEXT",
   "ALTER TABLE users ADD COLUMN reset_code_expires_at TEXT",
+  // batch_id: מזהה משותף לכל ההוראות שנוצרו מאותה שליחה אחת (כמה סניפים + כמה עובדים בבת אחת) -
+  // כדי שהתצוגה למנהל תוכל להציג אותן כשורה אחת ("נשלחה הוראה אחת ל-13 סניפים") במקום 13 שורות
+  // נפרדות, גם שרשומות ה-DB עצמן נשארות נפרדות לכל (סניף, עובד) לצורך מעקב סטטוס פר-סניף
+  // (ר' משוב המשתמש: "כתבתי הודעה אחת... נשלח 13 הודעות, זה אמור להישלח כהודעה אחת"). NULL להוראות
+  // ישנות שנוצרו לפני התוספת - כל אחת מהן מוצגת כקבוצה בפני עצמה.
+  "ALTER TABLE instructions ADD COLUMN batch_id TEXT",
   // צירוף תמונה/וידאו להודעת צ'אט (כמו וואטסאפ) - ר' routes/chat.js. אופציונלי, אותו דפוס BLOB
   // כמו טבלת documents.
   "ALTER TABLE chat_messages ADD COLUMN attachment_data BLOB",

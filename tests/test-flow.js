@@ -327,6 +327,15 @@ async function main() {
   }});
   ok(broadcast.status === 201 && broadcast.data.created === 2, "הוראה ל-1 עובד × 2 סניפים יוצרת 2 הוראות בבת אחת");
 
+  // --- תצוגת מנהל: הוראה ל-2 סניפים בבת אחת מוצגת כקבוצה אחת (שורה אחת), לא 2 שורות נפרדות
+  //     (ר' משוב המשתמש: "כתבתי הודעה אחת... נשלח 13 הודעות, זה אמור להישלח כהודעה אחת") ---
+  const instrGroupsRes = await call("/api/instructions", { token: adminToken });
+  const broadcastGroup = instrGroupsRes.data.instructionGroups.find(g => g.text === "בדיקת שיבוץ לכולם");
+  ok(instrGroupsRes.status === 200 && broadcastGroup && broadcastGroup.totalCount === 2 && broadcastGroup.branches.length === 2, "המנהל רואה את שתי ההוראות שנוצרו מהשליחה כקבוצה אחת (לא 2 שורות)");
+  ok(broadcastGroup.doneCount === 0, "אף אחת מהוראות הקבוצה לא סומנה כטופלה עדיין");
+  const singleInstrGroup = instrGroupsRes.data.instructionGroups.find(g => g.branches.length === 1 && g.branches[0].branchId === branchId && g.workerUserId === workerId);
+  ok(singleInstrGroup && singleInstrGroup.totalCount === 1, "הוראה בודדת (סניף אחד) עדיין מוצגת כקבוצה משלה, לא מתמזגת עם אחרות");
+
   // --- "בחר הכל" בצ'אט: הודעה חדשה ל-1 עובד × 2 סניפים יוצרת 2 הודעות צ'אט (שרשור נפרד לכל סניף),
   //     אבל מייל מרוכז אחד בלבד (לא מייל נפרד לכל סניף) ---
   const chatBroadcast = await call("/api/chat/bulk", { method: "POST", token: adminToken, body: {
