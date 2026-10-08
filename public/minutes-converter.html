@@ -234,6 +234,16 @@
         <input type="file" id="fileInput" accept=".xlsx,.xls" />
       </div>
       <div id="fileChipHolder"></div>
+
+      <div class="card-title" style="margin-top:22px;"><span class="num">+</span> רשימת לקוחות מועדון (לא חובה)</div>
+      <div style="font-size:12.5px;color:var(--muted);">אם דוח ניצול הדקות כולל את כל הלקוחות - העלו גם את "רשימת לקוחות" מסייפר (מסוננת לאנשי מועדון), וייכללו רק הטלפונים שמופיעים בה.</div>
+      <div class="dropzone" id="clubDropzone">
+        <div class="dz-icon">👥</div>
+        <div class="dz-text">גררו את רשימת הלקוחות לכאן, או לחצו לבחירה</div>
+        <div class="dz-sub">קובץ .xlsx עם עמודת "טלפון"</div>
+        <input type="file" id="clubFileInput" accept=".xlsx,.xls" />
+      </div>
+      <div id="clubChipHolder"></div>
       <button class="primary" id="processBtn" disabled>עבד קובץ והפק יתרות</button>
       <div class="status" id="statusLine"></div>
     </div>
@@ -318,6 +328,66 @@
     if (e.target.files.length) handleFile(e.target.files[0]);
   });
 
+  // רשימת לקוחות מועדון (אופציונלי): Set של טלפונים מנורמלים, או null = בלי סינון
+  const clubDropzone = document.getElementById('clubDropzone');
+  const clubFileInput = document.getElementById('clubFileInput');
+  const clubChipHolder = document.getElementById('clubChipHolder');
+  let clubPhones = null;
+
+  // השוואת טלפונים בלי מקפים/רווחים ובלי 0 מוביל (אקסל לפעמים מוחק אותו)
+  function normPhone(p){ return String(p == null ? '' : p).replace(/\D/g, '').replace(/^0+/, ''); }
+
+  function parseClubList(rows){
+    let hdr = -1, phoneCol = -1, groupCol = -1;
+    for (let i = 0; i < Math.min(rows.length, 20) && hdr < 0; i++){
+      (rows[i] || []).forEach((c, j) => {
+        const t = String(c == null ? '' : c).trim();
+        if (phoneCol < 0 && t.includes('טלפון')) { phoneCol = j; hdr = i; }
+        if (t.includes('קבוצת לקוח')) groupCol = j;
+      });
+    }
+    if (phoneCol < 0) throw new Error('לא נמצאה עמודת "טלפון" ברשימת הלקוחות');
+    const set = new Set();
+    for (let i = hdr + 1; i < rows.length; i++){
+      const r = rows[i] || [];
+      if (groupCol >= 0 && !String(r[groupCol] || '').includes('מועדון')) continue;
+      const p = normPhone(r[phoneCol]);
+      if (p.length >= 7) set.add(p);
+    }
+    return set;
+  }
+
+  function handleClubFile(file){
+    const reader = new FileReader();
+    reader.onload = e => {
+      try{
+        const wb = XLSX.read(new Uint8Array(e.target.result), {type: 'array'});
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header: 1, raw: false, defval: null});
+        clubPhones = parseClubList(rows);
+        clubChipHolder.innerHTML = `<div class="file-chip"><span class="dot"></span>${file.name} · ${clubPhones.size} אנשי מועדון <a href="#" id="clubClear" style="color:var(--muted);">הסר</a></div>`;
+        document.getElementById('clubClear').addEventListener('click', ev => {
+          ev.preventDefault(); clubPhones = null; clubChipHolder.innerHTML = ''; clubFileInput.value = '';
+        });
+      } catch(err){
+        clubPhones = null;
+        clubChipHolder.innerHTML = `<div class="status err">${err.message}</div>`;
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  clubDropzone.addEventListener('click', () => clubFileInput.click());
+  clubDropzone.addEventListener('dragover', e => { e.preventDefault(); clubDropzone.classList.add('drag'); });
+  clubDropzone.addEventListener('dragleave', () => clubDropzone.classList.remove('drag'));
+  clubDropzone.addEventListener('drop', e => {
+    e.preventDefault();
+    clubDropzone.classList.remove('drag');
+    if (e.dataTransfer.files.length) handleClubFile(e.dataTransfer.files[0]);
+  });
+  clubFileInput.addEventListener('change', e => {
+    if (e.target.files.length) handleClubFile(e.target.files[0]);
+  });
+
   function handleFile(file){
     currentFile = file;
     fileChipHolder.innerHTML = `<div class="file-chip"><span class="dot"></span>${file.name}</div>`;
@@ -343,12 +413,14 @@
 
         const pattern = /טלפון:\s*([0-9\-]+)\s*\(סך דקות\s*([\d,]+\.?\d*)\)/;
         const records = [];
+        let skipped = 0;
         for (const row of rows){
           const cell = row[0];
           if (typeof cell === 'string' && cell.trim().startsWith('טלפון')){
             const m = pattern.exec(cell);
             if (m){
               const phone = m[1];
+              if (clubPhones && !clubPhones.has(normPhone(phone))) { skipped++; continue; }
               const amount = parseFloat(m[2].replace(/,/g, ''));
               const extra = Math.round(amount * 0.30 * 100) / 100;
               records.push({phone, extra});
@@ -374,7 +446,8 @@
         document.getElementById('statMonth').textContent = monthName + ' ' + year;
 
         resultsCard.style.display = 'block';
-        statusLine.textContent = `זוהו ${records.length} טלפונים בהצלחה.`;
+        statusLine.textContent = `זוהו ${records.length} טלפונים בהצלחה.` +
+          (clubPhones ? ` (סוננו ${skipped} טלפונים שאינם ברשימת המועדון)` : '');
         statusLine.className = 'status ok';
         processBtn.disabled = false;
 
