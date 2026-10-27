@@ -33,10 +33,45 @@ class Router {
     const parsedUrl = new URL(req.url, "http://localhost");
     const pathname = decodeURIComponent(parsedUrl.pathname);
 
-    // CORS - מאפשר לאזור האישי (frontend) בכל מקור לקרוא ל-API בזמן פיתוח
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+    // --- כותרות אבטחה (על כל תגובה) ---
+    // CSP: חוסם הזרקת סקריפטים/תוכן זדוני - טעינת קוד מותרת רק מהשרת עצמו ומהמקורות המוכרים
+    // (גופני Google, ספריית xlsx מ-cdnjs). 'unsafe-inline' נדרש כי הממשק משתמש בסקריפטים/סגנונות
+    // מוטבעים; עדיין נחסמת טעינת קוד חיצוני מכל דומיין אחר - קו ההגנה המרכזי נגד השתלת תוכנה זדונית.
+    res.setHeader(
+      "Content-Security-Policy",
+      [
+        "default-src 'self'",
+        "base-uri 'self'",
+        "object-src 'none'",
+        "frame-ancestors 'self'",
+        "form-action 'self'",
+        "img-src 'self' data:",
+        "font-src 'self' https://fonts.gstatic.com",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com",
+        "connect-src 'self'",
+        "frame-src 'self'",
+      ].join("; ")
+    );
+    res.setHeader("X-Content-Type-Options", "nosniff");          // מונע ניחוש-סוג וביצוע קובץ מתחזה
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");              // מונע clickjacking (מסגור ע"י אתר זר)
+    res.setHeader("Referrer-Policy", "no-referrer");            // לא דולף נתיבים/טוקנים ל-Referer
+    res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+    res.setHeader("Strict-Transport-Security", "max-age=15552000; includeSubDomains"); // כפיית HTTPS
+
+    // --- CORS מוקשח ---
+    // ברירת המחדל: הממשק מוגש מאותו מקור (same-origin) ולכן אינו צריך CORS כלל, ושיחות ה-webhook
+    // (ימות/Twilio/טכנוליין) הן שרת-לשרת (CORS לא חל עליהן). לכן לא מתירים שום מקור חוצה-דומיין,
+    // אלא אם הוגדר ALLOWED_ORIGINS ב-env (רשימה מופרדת בפסיקים) - ואז משקפים רק מקור שברשימה.
+    const origin = req.headers["origin"];
+    const allowed = (process.env.ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean);
+    if (origin && allowed.includes(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+      res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+    }
     if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
 
     const match = this.routes.find(r => r.method === req.method && r.pattern.test(pathname));

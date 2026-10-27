@@ -3,8 +3,34 @@
 "use strict";
 
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me-in-production";
+// סוד חתימת הטוקנים. אם לא הוגדר JWT_SECRET ב-env — במקום ברירת מחדל קבועה שחשופה בקוד (שאיפשרה
+// לכל מי שרואה את המקור לזייף טוקני התחברות של מנהל) — יוצרים סוד אקראי חזק פעם אחת ושומרים אותו
+// לדיסק הקבוע (ליד מסד הנתונים), כך שהטוקנים שורדים הפעלה-מחדש. אם אי אפשר לכתוב לדיסק — נופלים
+// לסוד אקראי בזיכרון (טוקנים לא ישרדו ריסטארט, אבל עדיף בהרבה על סוד צפוי).
+function resolveJwtSecret() {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  const dir = process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : path.join(__dirname, "..", "..", "data");
+  const file = path.join(dir, ".jwt-secret");
+  try {
+    if (fs.existsSync(file)) {
+      const existing = fs.readFileSync(file, "utf8").trim();
+      if (existing) return existing;
+    }
+    fs.mkdirSync(dir, { recursive: true });
+    const secret = crypto.randomBytes(48).toString("hex");
+    fs.writeFileSync(file, secret, { mode: 0o600 });
+    console.warn("[אבטחה] לא הוגדר JWT_SECRET — נוצר סוד אקראי קבוע ונשמר לדיסק. מומלץ להגדיר JWT_SECRET ב-env.");
+    return secret;
+  } catch (e) {
+    console.warn("[אבטחה] לא ניתן לשמור JWT_SECRET לדיסק (" + e.message + ") — נוצר סוד זמני בזיכרון.");
+    return crypto.randomBytes(48).toString("hex");
+  }
+}
+
+const JWT_SECRET = resolveJwtSecret();
 
 // ---------- סיסמאות (scrypt + salt, שקול ל-bcrypt מבחינת אבטחה) ----------
 function hashPassword(password) {
@@ -58,7 +84,9 @@ function verifyToken(token) {
 
 // ---------- קוד חד-פעמי לשחזור סיסמה (4 ספרות) ----------
 function generateOtpCode() {
-  return String(crypto.randomInt(1000, 9999));
+  // 0000–9999 (כולל) = 10,000 אפשרויות. randomInt עם מקסימום בלעדי, לכן 10000, ו-padStart כדי
+  // שגם קוד כמו "0042" יהיה בן 4 ספרות תקני (קודם 9999 לא נוצר כלל, והטווח היה קטן יותר).
+  return String(crypto.randomInt(0, 10000)).padStart(4, "0");
 }
 function hashCode(code) {
   return crypto.createHash("sha256").update(code).digest("hex");

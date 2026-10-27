@@ -101,13 +101,13 @@ async function main() {
   const loginWithOldPin = await call("/api/login", { method: "POST", body: { username: "forgotuser", pin: "1234" } });
   ok(loginWithOldPin.status === 401, "הסיסמה הישנה כבר לא עובדת אחרי איפוס");
 
-  // --- כלי חירום: איפוס PIN ישיר דרך debug endpoint (מוגן במפתח קבוע) ---
-  const debugResetWrongKey = await call("/api/debug/reset-user-pin", { method: "POST", body: { key: "wrong", username: "forgotuser", newPin: "1111" } });
-  ok(debugResetWrongKey.status === 403, "כלי איפוס החירום דוחה מפתח שגוי");
-  const debugReset = await call("/api/debug/reset-user-pin", { method: "POST", body: { key: "sulchan-diag-7429", username: "forgotuser", newPin: "1111" } });
-  ok(debugReset.status === 200, "כלי איפוס החירום מאפס PIN עם המפתח הנכון");
-  const loginAfterDebugReset = await call("/api/login", { method: "POST", body: { username: "forgotuser", pin: "1111" } });
-  ok(loginAfterDebugReset.status === 200, "התחברות עובדת אחרי איפוס חירום");
+  // --- אבטחה: נתיבי ה-debug הזמניים (הדלת האחורית) הוסרו ואינם קיימים יותר ---
+  const debugResetGone = await call("/api/debug/reset-user-pin", { method: "POST", body: { key: "sulchan-diag-7429", username: "forgotuser", newPin: "1111" } });
+  ok(debugResetGone.status === 404, "נתיב איפוס ה-PIN של ה-debug הוסר (404)");
+  const debugLogsGone = await call("/api/debug/recent-logs?key=sulchan-diag-7429", { method: "GET" });
+  ok(debugLogsGone.status === 404, "נתיב recent-logs של ה-debug הוסר (404)");
+  const debugUsersGone = await call("/api/debug/list-users?key=sulchan-diag-7429", { method: "GET" });
+  ok(debugUsersGone.status === 404, "נתיב list-users של ה-debug הוסר (404)");
 
   // --- הרשמה עצמית: נכשלת בלי הזמנה מראש, מצליחה אחרי שהמנהל מוסיף את המייל ---
   const registerBlocked = await call("/api/register", { method: "POST", body: {

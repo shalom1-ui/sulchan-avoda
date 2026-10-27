@@ -17,6 +17,13 @@ function register(router) {
   }));
 
   router.get("/api/branches/:branchId/beneficiaries", requireAuth(async (ctx) => {
+    // הרשאה: מנהל רואה כל סניף; עובד רק סניף שהוא משויך אליו. בלי הבדיקה הזו כל עובד מחובר יכול
+    // היה להחליף branchId בכתובת ולקרוא שמות/טלפונים/פרטי-תשלום של מוטבי שכר בכל הסניפים.
+    if (ctx.user.role !== "admin") {
+      const assigned = db.prepare("SELECT 1 FROM worker_branches WHERE worker_user_id = ? AND branch_id = ?")
+        .get(ctx.user.userId, ctx.params.branchId);
+      if (!assigned) return json(ctx.res, 403, { error: "אין הרשאה לסניף זה" });
+    }
     const rows = db.prepare("SELECT * FROM beneficiaries WHERE branch_id = ? AND active = 1 ORDER BY name")
       .all(ctx.params.branchId);
     return json(ctx.res, 200, { beneficiaries: rows });

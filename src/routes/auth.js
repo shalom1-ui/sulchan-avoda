@@ -5,6 +5,9 @@ const { json } = require("../router");
 const { verifyPassword, hashPassword, signToken, isValidPin, generateOtpCode, hashCode } = require("../utils/crypto");
 const { requireAuth, requireAdmin } = require("../middleware/auth");
 const { sendEmail } = require("../services/email");
+const { rateLimit, clientIp } = require("../utils/rateLimit");
+
+const RL_WINDOW = 15 * 60 * 1000; // 15 דקות
 
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
@@ -17,6 +20,9 @@ function register(router) {
     const { email, fullName, username, pin, phone } = ctx.body;
     if (!email || !fullName || !username || !pin) return json(ctx.res, 400, { error: "חסרים שדות חובה" });
     if (!isValidPin(pin)) return json(ctx.res, 400, { error: "הקוד חייב להיות בדיוק 4 ספרות" });
+    // הגבלת הצפה על נתיב ההרשמה הפתוח: עד 5 ניסיונות ב-15 דקות לכל IP.
+    const rlReg = rateLimit(`register:${clientIp(ctx.req)}`, 5, RL_WINDOW);
+    if (!rlReg.ok) return json(ctx.res, 429, { error: `יותר מדי ניסיונות הרשמה. נסו שוב בעוד ${Math.ceil(rlReg.retryAfterSec / 60)} דקות.` });
 
     const normalizedEmail = normalizeEmail(email);
     const invite = db.prepare("SELECT * FROM signup_invites WHERE email = ? AND used_at IS NULL").get(normalizedEmail);
@@ -75,6 +81,9 @@ function register(router) {
   router.post("/api/login", async (ctx) => {
     const { username, pin } = ctx.body;
     if (!username || !pin) return json(ctx.res, 400, { error: "יש להזין שם משתמש וקוד" });
+    // הגנת brute-force: עד 10 ניסיונות ב-15 דקות לכל שילוב IP+שם-משתמש (קוד PIN בן 4 ספרות).
+    const rl = rateLimit(`login:${clientIp(ctx.req)}:${username.trim()}`, 10, RL_WINDOW);
+    if (!rl.ok) return json(ctx.res, 429, { error: `יותר מדי ניסיונות התחברות. נסו שוב בעוד ${Math.ceil(rl.retryAfterSec / 60)} דקות.` });
     const user = db.prepare("SELECT * FROM users WHERE username = ? AND active = 1").get(username.trim());
     if (!user || !verifyPassword(String(pin), user.password_hash)) {
       return json(ctx.res, 401, { error: "שם משתמש או קוד שגויים" });
@@ -92,6 +101,9 @@ function register(router) {
     const { username } = ctx.body;
     const genericMsg = "אם שם המשתמש קיים ויש לו כתובת מייל רשומה, קוד נשלח אליה.";
     if (!username) return json(ctx.res, 400, { error: "יש להזין שם משתמש" });
+    // הגבלת הצפה: עד 5 בקשות קוד ב-15 דקות לכל IP, שלא יפציצו משתמש במיילים או ימצו שמות משתמש.
+    const rlReq = rateLimit(`forgot-req:${clientIp(ctx.req)}`, 5, RL_WINDOW);
+    if (!rlReq.ok) return json(ctx.res, 429, { error: `יותר מדי בקשות. נסו שוב בעוד ${Math.ceil(rlReq.retryAfterSec / 60)} דקות.` });
     const user = db.prepare("SELECT * FROM users WHERE username = ? AND active = 1").get(username.trim());
     if (user && user.email) {
       const code = generateOtpCode();
@@ -111,6 +123,9 @@ function register(router) {
     const { username, code, newPin } = ctx.body;
     if (!username || !code || !newPin) return json(ctx.res, 400, { error: "חסרים שדות חובה" });
     if (!isValidPin(newPin)) return json(ctx.res, 400, { error: "הקוד החדש חייב להיות בדיוק 4 ספרות" });
+    // הגנת brute-force על ניחוש קוד האיפוס (4 ספרות): עד 8 ניסיונות ב-15 דקות לכל IP+שם-משתמש.
+    const rlConf = rateLimit(`forgot-confirm:${clientIp(ctx.req)}:${username.trim()}`, 8, RL_WINDOW);
+    if (!rlConf.ok) return json(ctx.res, 429, { error: `יותר מדי ניסיונות. בקשו קוד חדש ונסו שוב בעוד ${Math.ceil(rlConf.retryAfterSec / 60)} דקות.` });
     const user = db.prepare("SELECT * FROM users WHERE username = ? AND active = 1").get(username.trim());
     if (!user || !user.reset_code_hash || !user.reset_code_expires_at) {
       return json(ctx.res, 400, { error: "לא נמצאה בקשת איפוס פעילה עבור המשתמש הזה" });
