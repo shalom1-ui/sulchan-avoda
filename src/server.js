@@ -8,8 +8,8 @@ const { Router, json, html, raw } = require("./router");
 const debugLog = require("./debugLog");
 
 // עוטפים את console.log/console.error כדי לתפוס אוטומטית שורות אבחון רלוונטיות (מייל, ימות, שגיאות
-// ראוטר) לתוך debugLog - כדי שאפשר יהיה לשלוף אותן דרך /api/debug/recent-logs בלי לחפש ב-Logs של
-// Render ידנית. לא משנה את ההתנהגות הרגילה (עדיין מודפס כרגיל ל-Logs). אותו דפוס כמו "הפנקס שלי".
+// ראוטר) לתוך debugLog (חיץ בזיכרון). לא משנה את ההתנהגות הרגילה (עדיין מודפס כרגיל ל-Logs של Render,
+// ששם קוראים אותן). הנתיב שחשף אותן ב-HTTP הוסר מטעמי אבטחה. אותו דפוס כמו "הפנקס שלי".
 const DEBUG_PATTERN = /מייל|\[YEMOT\]|\[ROUTER\]|שגיאה|נכשל/;
 const originalConsoleLog = console.log;
 console.log = (...args) => {
@@ -30,41 +30,9 @@ router.get("/api/health", async (ctx) => {
   return json(ctx.res, 200, { status: "ok", service: "שולחן עבודה - ניהול", time: new Date().toISOString() });
 });
 
-// כלי אבחון זמני: שליפת שורות הלוג האחרונות (מייל/ימות/שגיאות) בלי לדפדף ב-Render Logs. מוגן
-// במילת-מעבר קבועה בכתובת (לא הרשאה אמיתית - זה כלי זמני לפיתוח, לא לחשוף בפרודקשן לטווח ארוך).
-router.get("/api/debug/recent-logs", async (ctx) => {
-  if (ctx.query.key !== "sulchan-diag-7429") return json(ctx.res, 403, { error: "לא מורשה" });
-  return json(ctx.res, 200, { lines: debugLog.getAll() });
-});
-
-// כלי חירום זמני: איפוס קוד PIN של משתמש קיים, ללא צורך בהתחברות - למקרה נעילה מוחלטת (כמו
-// כשמנהל לא זוכר את הקוד ואין לו כתובת מייל רשומה, כך ש"שכחתי סיסמה" הרגיל לא יעבוד). מוגן באותה
-// מילת-מעבר כמו recent-logs. **יש להסיר את הנתיב הזה בהמשך** - זה כלי חירום זמני, לא אמצעי קבוע.
-router.post("/api/debug/reset-user-pin", async (ctx) => {
-  if (ctx.body.key !== "sulchan-diag-7429") return json(ctx.res, 403, { error: "לא מורשה" });
-  const { username, newPin } = ctx.body;
-  if (!username || !/^\d{4}$/.test(String(newPin || ""))) return json(ctx.res, 400, { error: "חסר username, או newPin לא בן 4 ספרות" });
-  const db = require("./db");
-  const { hashPassword } = require("./utils/crypto");
-  const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
-  if (!user) return json(ctx.res, 404, { error: "משתמש לא נמצא" });
-  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(String(newPin)), user.id);
-  const after = db.prepare("SELECT * FROM users WHERE id = ?").get(user.id);
-  const { verifyPassword } = require("./utils/crypto");
-  return json(ctx.res, 200, {
-    ok: true, fullName: user.full_name, userId: user.id, active: after.active,
-    hashPrefixAfterUpdate: after.password_hash.slice(0, 20),
-    verifiesRightAfterUpdate: verifyPassword(String(newPin), after.password_hash),
-  });
-});
-
-// אבחון זמני: כמה שורות users יש בכלל, ופרטים בסיסיים (בלי סיסמאות) - לבדוק אם יש שכפולים מוזרים.
-router.get("/api/debug/list-users", async (ctx) => {
-  if (ctx.query.key !== "sulchan-diag-7429") return json(ctx.res, 403, { error: "לא מורשה" });
-  const db = require("./db");
-  const rows = db.prepare("SELECT id, username, full_name, role, active, length(password_hash) AS hash_len FROM users").all();
-  return json(ctx.res, 200, { users: rows, dbPath: process.env.DB_PATH || "default" });
-});
+// (הוסרו נתיבי /api/debug/* הזמניים - recent-logs / reset-user-pin / list-users -
+// שהיו מוגנים במילת-מעבר קבועה בקוד. איפוס PIN למנהל שאיבד גישה נעשה מעתה מתוך
+// קונסול/סקריפט בשרת, לא דרך נתיב HTTP פתוח.)
 
 const APP_HTML_PATH = path.join(__dirname, "..", "public", "app.html");
 router.get("/", async (ctx) => {
